@@ -22,6 +22,22 @@ public partial class HomeViewModel : ObservableObject
 
     [ObservableProperty] private string? _capWarning;
 
+    // 格式化显示属性（WinUI 3 的 Binding 不支持 StringFormat）
+    public string CpuFrequencyDisplay => CpuFrequency.ToString("F0");
+    public string SocketPowerDisplay => SocketPower.ToString("F1");
+    public string CpuTempDisplay => CpuTemp.ToString("F0");
+    public string FastLimitActualDisplay => FastLimitActual.ToString("F1");
+    public string SlowLimitActualDisplay => SlowLimitActual.ToString("F1");
+    public string TctlTempActualDisplay => TctlTempActual.ToString("F0");
+
+    // 属性变更时通知格式化属性更新
+    partial void OnCpuFrequencyChanged(double value) => OnPropertyChanged(nameof(CpuFrequencyDisplay));
+    partial void OnSocketPowerChanged(double value) => OnPropertyChanged(nameof(SocketPowerDisplay));
+    partial void OnCpuTempChanged(double value) => OnPropertyChanged(nameof(CpuTempDisplay));
+    partial void OnFastLimitActualChanged(double value) => OnPropertyChanged(nameof(FastLimitActualDisplay));
+    partial void OnSlowLimitActualChanged(double value) => OnPropertyChanged(nameof(SlowLimitActualDisplay));
+    partial void OnTctlTempActualChanged(double value) => OnPropertyChanged(nameof(TctlTempActualDisplay));
+
     [RelayCommand]
     private async Task SwitchModeAsync(string mode)
     {

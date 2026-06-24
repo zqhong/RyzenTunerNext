@@ -58,17 +58,17 @@
             <StackPanel Orientation="Horizontal" Spacing="16">
                 <controls:StatCard
                     Label="CPU 频率"
-                    Value="{Binding CpuFrequency, StringFormat=F0}"
+                    Value="{Binding CpuFrequencyDisplay}"
                     Unit="MHz"
                     Icon="&#xE950;" />
                 <controls:StatCard
                     Label="整机功耗"
-                    Value="{Binding SocketPower, StringFormat=F1}"
+                    Value="{Binding SocketPowerDisplay}"
                     Unit="W"
                     Icon="&#xE945;" />
                 <controls:StatCard
                     Label="CPU 温度"
-                    Value="{Binding CpuTemp, StringFormat=F0}"
+                    Value="{Binding CpuTempDisplay}"
                     Unit="℃"
                     Icon="&#xEB91;" />
             </StackPanel>
@@ -78,17 +78,17 @@
             <StackPanel Orientation="Horizontal" Spacing="16">
                 <controls:StatCard
                     Label="Fast Limit"
-                    Value="{Binding FastLimitActual, StringFormat=F1}"
+                    Value="{Binding FastLimitActualDisplay}"
                     Unit="W"
                     Icon="&#xE945;" />
                 <controls:StatCard
                     Label="Slow Limit"
-                    Value="{Binding SlowLimitActual, StringFormat=F1}"
+                    Value="{Binding SlowLimitActualDisplay}"
                     Unit="W"
                     Icon="&#xE945;" />
                 <controls:StatCard
                     Label="Tctl 温度"
-                    Value="{Binding TctlTempActual, StringFormat=F0}"
+                    Value="{Binding TctlTempActualDisplay}"
                     Unit="℃"
                     Icon="&#xEB91;" />
             </StackPanel>

@@ -5,10 +5,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:views="using:RyzenTunerNext.App.Views"
     xmlns:tb="using:H.NotifyIcon"
-    Title="RyzenTunerNext"
-    MinWidth="800"
-    MinHeight="600"
-    Closing="Window_Closing">
+    Title="RyzenTunerNext">
 
     <Grid>
         <NavigationView
@@ -53,7 +50,7 @@
         <tb:TaskbarIcon
             x:Name="TrayIcon"
             ToolTipText="RyzenTunerNext"
-            LeftDoubleClickCommand="{x:Bind TrayRestoreCommand}"
+            DoubleClickCommand="{x:Bind TrayRestoreCommand}"
             ContextMenuMode="PopupMenu" />
     </Grid>
 </Window>
