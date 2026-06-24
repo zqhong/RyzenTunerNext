@@ -103,7 +103,7 @@ internal static class ServiceManager
         return (false, $"停止失败: {result.Output}");
     }
 
-    private static string? GetServiceExePath()
+    internal static string? GetServiceExePath()
     {
         var appDir = AppContext.BaseDirectory;
 
