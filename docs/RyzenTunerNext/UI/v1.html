@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RyzenTunerNext - Prototype</title>
+    <style>
+        /* 模拟 WinUI 3 Fluent Design 变量 */
+        :root {
+            --bg-color: #F3F3F3;
+            --nav-bg: #EAEAEA;
+            --card-bg: #FFFFFF;
+            --text-primary: #1A1A1A;
+            --text-secondary: #5C5C5C;
+            --accent-color: #005FB8; /* WinUI 默认蓝色 */
+            --border-color: #E5E5E5;
+            --border-radius: 8px;
+            --font-family: "Segoe UI Variable", "Segoe UI", -apple-system, sans-serif;
+            --icon-font: "Segoe Fluent Icons", "Segoe MDL2 Assets";
+        }
+
+        @font-face {
+            font-family: 'Segoe Fluent Icons';
+            src: local('Segoe Fluent Icons');
+        }
+
+        body {
+            margin: 0;
+            font-family: var(--font-family);
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+            font-size: 14px;
+        }
+
+        /* 侧边栏 (NavigationView) */
+        .sidebar {
+            width: 240px;
+            background-color: var(--nav-bg);
+            padding: 12px 12px;
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid var(--border-color);
+        }
+
+        .app-title {
+            font-size: 16px;
+            font-weight: 600;
+            padding: 12px 16px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .nav-item {
+            padding: 10px 16px;
+            margin-bottom: 4px;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: var(--text-primary);
+            transition: background 0.2s;
+        }
+
+        .nav-item:hover { background-color: rgba(0, 0, 0, 0.04); }
+        .nav-item.active {
+            background-color: #FFFFFF;
+            font-weight: 600;
+            position: relative;
+        }
+        .nav-item.active::before {
+            content: '';
+            position: absolute;
+            left: 0; top: 25%; bottom: 25%; width: 3px;
+            background-color: var(--accent-color);
+            border-radius: 4px;
+        }
+        .nav-icon { font-family: var(--icon-font); font-size: 16px; width: 20px; text-align: center;}
+        .spacer { flex-grow: 1; }
+
+        /* 主内容区 */
+        .main-content {
+            flex-grow: 1;
+            padding: 32px 40px;
+            overflow-y: auto;
+        }
+        .page { display: none; animation: fadeIn 0.3s; }
+        .page.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        h1 { font-size: 28px; font-weight: 600; margin: 0 0 24px 0; }
+        h2 { font-size: 18px; font-weight: 600; margin: 24px 0 16px 0; }
+
+        /* 卡片设计 */
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius);
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+            margin-bottom: 16px;
+        }
+
+        .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+        .grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+
+        /* 状态数值展示 */
+        .stat-box { display: flex; flex-direction: column; gap: 4px; }
+        .stat-label { color: var(--text-secondary); font-size: 12px; }
+        .stat-value { font-size: 24px; font-weight: 600; }
+        .stat-unit { font-size: 14px; font-weight: normal; color: var(--text-secondary); }
+
+        /* 控件 (WinUI 风格) */
+        .control-group { margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; }
+        .control-label { display: flex; align-items: center; gap: 8px; }
+        
+        select, input[type="text"] {
+            padding: 6px 12px;
+            border: 1px solid rgba(0,0,0,0.1);
+            border-radius: 4px;
+            background: #FDFDFD;
+            border-bottom: 1px solid rgba(0,0,0,0.4);
+            font-family: inherit;
+            font-size: 14px;
+            min-width: 150px;
+            outline: none;
+        }
+        select:focus, input[type="text"]:focus { border-bottom-color: var(--accent-color); border-bottom-width: 2px; padding-bottom: 5px;}
+
+        /* WinUI 风格的 NumberBox 替代 Slider */
+        .number-box {
+            display: flex;
+            align-items: center;
+            border: 1px solid rgba(0,0,0,0.1);
+            border-bottom: 1px solid rgba(0,0,0,0.4);
+            border-radius: 4px;
+            background: #FDFDFD;
+            overflow: hidden;
+            width: 140px;
+        }
+        .number-box input {
+            border: none; outline: none; width: 100%; padding: 6px 12px; font-family: inherit; text-align: left; background: transparent;
+        }
+        .number-box-btns { display: flex; flex-direction: column; background: #F3F3F3; border-left: 1px solid rgba(0,0,0,0.1); }
+        .number-box-btns button {
+            border: none; background: transparent; height: 15px; width: 24px; font-size: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+        }
+        .number-box-btns button:hover { background: #E5E5E5; }
+
+        /* Tooltip */
+        .tooltip-icon {
+            font-family: var(--icon-font); color: var(--text-secondary); cursor: help; font-size: 12px;
+            position: relative;
+        }
+        .tooltip-icon::after {
+            content: attr(data-tip);
+            position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
+            background: var(--card-bg); color: var(--text-primary);
+            padding: 8px 12px; border-radius: 4px; font-family: var(--font-family); font-size: 12px;
+            white-space: pre-wrap; width: 220px; border: 1px solid var(--border-color);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            opacity: 0; pointer-events: none; transition: opacity 0.2s; z-index: 10;
+        }
+        .tooltip-icon:hover::after { opacity: 1; }
+
+        /* 表格 (DataGrid) */
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border-color); }
+        th { color: var(--text-secondary); font-weight: normal; font-size: 12px; }
+        tr:hover { background-color: rgba(0,0,0,0.02); }
+
+        /* 按钮 */
+        .btn {
+            padding: 6px 16px; border: 1px solid var(--border-color); border-radius: 4px;
+            background: var(--card-bg); cursor: pointer; font-family: inherit; font-size: 14px;
+        }
+        .btn:hover { background: #F5F5F5; }
+        .btn-primary { background: var(--accent-color); color: white; border-color: transparent; }
+        .btn-primary:hover { background: #0056A3; }
+
+        /* 日志筛选栏 */
+        .filter-bar { display: flex; gap: 12px; margin-bottom: 16px; }
+        .search-box { position: relative; flex-grow: 1; max-width: 300px; }
+        .search-box input { width: 100%; padding-left: 30px; box-sizing: border-box; }
+        .search-box::before {
+            content: '\E721'; font-family: var(--icon-font); position: absolute; left: 10px; top: 8px; color: var(--text-secondary);
+        }
+
+        .alert-box { background: #F0F6FF; border-left: 4px solid var(--accent-color); padding: 12px 16px; margin: 16px 0; border-radius: 4px; }
+    </style>
+</head>
+<body>
+
+    <!-- 侧边栏导航 -->
+    <div class="sidebar">
+        <div class="app-title">
+            <span style="font-family: var(--icon-font); color: var(--accent-color); font-size: 20px;">&#xEC4A;</span>
+            RyzenTunerNext
+        </div>
+        <div class="nav-item active" onclick="switchPage('home')"><span class="nav-icon">&#xE80F;</span>首页</div>
+        <div class="nav-item" onclick="switchPage('settings')"><span class="nav-icon">&#xE713;</span>设置</div>
+        <div class="nav-item" onclick="switchPage('profiler')"><span class="nav-icon">&#xE9D9;</span>能效分析</div>
+        <div class="nav-item" onclick="switchPage('logs')"><span class="nav-icon">&#xE81C;</span>运行日志</div>
+        <div class="spacer"></div>
+        <div class="nav-item" onclick="switchPage('about')"><span class="nav-icon">&#xE946;</span>关于</div>
+    </div>
+
+    <!-- 主内容区 -->
+    <div class="main-content">
+        
+        <!-- 首页 -->
+        <div id="home" class="page active">
+            <h1>首页</h1>
+            
+            <div class="card" style="display: flex; align-items: center; justify-content: space-between; padding: 16px 20px;">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <span style="font-size: 16px; font-weight: 600;">能耗模式</span>
+                    <span class="tooltip-icon" data-tip="自动模式：&#10;当 CPU 负载 < 10% 且用户无输入均持续 5 分钟时，切换为【省电模式】，否则为【性能模式】以避免频繁切换。">&#xE946;</span>
+                </div>
+                <select>
+                    <option>自动</option>
+                    <option>省电模式</option>
+                    <option>性能模式</option>
+                </select>
+            </div>
+
+            <h2>当前状态</h2>
+            <div class="grid-3">
+                <div class="card stat-box">
+                    <span class="stat-label">CPU 频率</span>
+                    <div><span class="stat-value">3200</span> <span class="stat-unit">MHz</span></div>
+                </div>
+                <div class="card stat-box">
+                    <span class="stat-label">整机功耗</span>
+                    <div><span class="stat-value">14.5</span> <span class="stat-unit">W</span></div>
+                </div>
+                <div class="card stat-box">
+                    <span class="stat-label">CPU 温度</span>
+                    <div><span class="stat-value">45</span> <span class="stat-unit">℃</span></div>
+                </div>
+            </div>
+
+            <h2>生效参数</h2>
+            <div class="grid-3">
+                <div class="card stat-box">
+                    <span class="stat-label">Fast Limit (峰值功耗)</span>
+                    <div><span class="stat-value">45</span> <span class="stat-unit">W</span></div>
+                </div>
+                <div class="card stat-box">
+                    <span class="stat-label">Slow Limit (平均功耗)</span>
+                    <div><span class="stat-value">45</span> <span class="stat-unit">W</span></div>
+                </div>
+                <div class="card stat-box">
+                    <span class="stat-label">Tctl 温度</span>
+                    <div><span class="stat-value">90</span> <span class="stat-unit">℃</span></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 设置页 -->
+        <div id="settings" class="page">
+            <h1>设置</h1>
+
+            <div class="card">
+                <h2>参数配置</h2>
+                
+                <h3 style="font-size: 14px; color: var(--text-secondary); margin-top: 0;">省电模式配置</h3>
+                <div class="control-group">
+                    <div class="control-label">Fast Limit <span class="tooltip-icon" data-tip="峰值功耗上限。必须大于或等于 Slow Limit。部分机型 BIOS 锁死了最大功耗。">&#xE946;</span></div>
+                    <div class="number-box">
+                        <input type="number" value="25" min="10" max="100">
+                        <div class="number-box-btns"><button>&#xE70E;</button><button>&#xE70D;</button></div>
+                        <span style="padding-right: 12px; color: var(--text-secondary);">W</span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <div class="control-label">Slow Limit <span class="tooltip-icon" data-tip="平均功耗上限。STAPM 限制会自动与此值同步。">&#xE946;</span></div>
+                    <div class="number-box">
+                        <input type="number" value="15" min="10" max="100">
+                        <div class="number-box-btns"><button>&#xE70E;</button><button>&#xE70D;</button></div>
+                        <span style="padding-right: 12px; color: var(--text-secondary);">W</span>
+                    </div>
+                </div>
+
+                <div style="height: 1px; background: var(--border-color); margin: 24px 0;"></div>
+
+                <h3 style="font-size: 14px; color: var(--text-secondary); margin-top: 0;">性能模式配置</h3>
+                <div class="control-group">
+                    <div class="control-label">Fast Limit</div>
+                    <div class="number-box">
+                        <input type="number" value="45" min="10" max="100">
+                        <div class="number-box-btns"><button>&#xE70E;</button><button>&#xE70D;</button></div>
+                        <span style="padding-right: 12px; color: var(--text-secondary);">W</span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <div class="control-label">Slow Limit</div>
+                    <div class="number-box">
+                        <input type="number" value="45" min="10" max="100">
+                        <div class="number-box-btns"><button>&#xE70E;</button><button>&#xE70D;</button></div>
+                        <span style="padding-right: 12px; color: var(--text-secondary);">W</span>
+                    </div>
+                </div>
+
+                <div style="height: 1px; background: var(--border-color); margin: 24px 0;"></div>
+                
+                <h3 style="font-size: 14px; color: var(--text-secondary); margin-top: 0;">全局配置</h3>
+                <div class="control-group">
+                    <div class="control-label">Tctl 温度 <span class="tooltip-icon" data-tip="建议比机器极限温度低 5℃，若遇到突然卡顿降至 4W，请降低此值。">&#xE946;</span></div>
+                    <div class="number-box">
+                        <input type="number" value="90" min="80" max="95">
+                        <div class="number-box-btns"><button>&#xE70E;</button><button>&#xE70D;</button></div>
+                        <span style="padding-right: 12px; color: var(--text-secondary);">℃</span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <div class="control-label">更新频率</div>
+                    <div class="number-box">
+                        <input type="number" value="4" min="2" max="16">
+                        <div class="number-box-btns"><button>&#xE70E;</button><button>&#xE70D;</button></div>
+                        <span style="padding-right: 12px; color: var(--text-secondary);">秒</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid-2">
+                <div class="card">
+                    <h2>快捷键</h2>
+                    <div class="control-group">
+                        <span class="control-label">自动模式</span>
+                        <input type="text" placeholder="按下组合键..." value="Ctrl + Alt + A">
+                    </div>
+                    <div class="control-group">
+                        <span class="control-label">省电模式</span>
+                        <input type="text" placeholder="按下组合键...">
+                    </div>
+                    <div class="control-group">
+                        <span class="control-label">性能模式</span>
+                        <input type="text" placeholder="按下组合键...">
+                    </div>
+                    <div style="font-size: 12px; color: #999; margin-top: 8px;">* 保存时将自动检查快捷键是否被系统占用。</div>
+                </div>
+
+                <div class="card">
+                    <h2>常规</h2>
+                    <div class="control-group">
+                        <span class="control-label">语言 (Language)</span>
+                        <select><option>English</option><option selected>简体中文</option></select>
+                    </div>
+                    <div class="control-group">
+                        <span class="control-label">主题</span>
+                        <select><option selected>亮色</option><option>暗色</option></select>
+                    </div>
+                    <div class="control-group">
+                        <span class="control-label">图表样式</span>
+                        <select><option selected>默认</option><option>简洁</option></select>
+                    </div>
+                    <div class="control-group">
+                        <span class="control-label">日志保留天数</span>
+                        <div class="number-box">
+                            <input type="number" value="7" min="1" max="30">
+                            <div class="number-box-btns"><button>&#xE70E;</button><button>&#xE70D;</button></div>
+                            <span style="padding-right: 12px; color: var(--text-secondary);">天</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 能效分析 (跑分) -->
+        <div id="profiler" class="page">
+            <h1>能效分析</h1>
+            <p style="color: var(--text-secondary); margin-bottom: 24px;">在不同功耗限制下运行基准测试，帮助您找到笔记本的“甜点”功耗。</p>
+
+            <div class="card">
+                <div class="filter-bar" style="align-items: center; justify-content: space-between;">
+                    <div style="display: flex; gap: 16px;">
+                        <select><option>CPU 单核测试</option><option>CPU 多核测试</option></select>
+                        <select><option>测试时长：短期 (30秒)</option><option>测试时长：标准 (3分钟)</option></select>
+                    </div>
+                    <button class="btn btn-primary"><span style="font-family: var(--icon-font); margin-right: 6px;">&#xE768;</span>开始测试</button>
+                </div>
+                
+                <table>
+                    <thead>
+                        <tr>
+                            <th>设定功耗 (Slow Limit)</th>
+                            <th>跑分成绩</th>
+                            <th>实际最高整机功耗</th>
+                            <th>CPU 最高温度</th>
+                            <th>能效比</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>15 W</td>
+                            <td>4,200</td>
+                            <td>15.2 W</td>
+                            <td>55 ℃</td>
+                            <td>276 Pts/W</td>
+                        </tr>
+                        <tr>
+                            <td>30 W</td>
+                            <td>8,500</td>
+                            <td>30.5 W</td>
+                            <td>72 ℃</td>
+                            <td>278 Pts/W</td>
+                        </tr>
+                        <tr>
+                            <td>45 W</td>
+                            <td>9,100</td>
+                            <td>45.1 W</td>
+                            <td>88 ℃</td>
+                            <td>201 Pts/W</td>
+                        </tr>
+                        <tr>
+                            <td>54 W (Max)</td>
+                            <td>9,250</td>
+                            <td>52.0 W</td>
+                            <td>95 ℃ (触发降频)</td>
+                            <td>177 Pts/W</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="alert-box">
+                <div style="font-weight: 600; margin-bottom: 4px; display:flex; align-items: center; gap: 6px;">
+                    <span style="font-family: var(--icon-font);">&#xE946;</span> 系统建议
+                </div>
+                根据测试结果，我们建议：<br>
+                - <b>省电模式</b> 设置为 <b>15W</b>，此时能效比极佳，温度极低。<br>
+                - <b>性能模式</b> 设置为 <b>30W - 35W</b> 为甜点区间，超过 45W 后性能提升不足 5%，但温度急剧升高且触发了温度墙 (95℃)。
+            </div>
+        </div>
+
+        <!-- 运行日志 -->
+        <div id="logs" class="page">
+            <h1>运行日志</h1>
+            
+            <div class="filter-bar">
+                <div class="search-box">
+                    <input type="text" placeholder="搜索日志...">
+                </div>
+                <select>
+                    <option>所有级别</option>
+                    <option>Info (信息)</option>
+                    <option>Warning (警告)</option>
+                    <option>Error (错误)</option>
+                </select>
+                <button class="btn"><span style="font-family: var(--icon-font);">&#xE71C;</span> 刷新</button>
+            </div>
+
+            <div class="card" style="padding: 0; overflow: hidden;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="padding-left: 20px;">时间</th>
+                            <th>级别</th>
+                            <th>操作</th>
+                            <th>参数 / 详情</th>
+                            <th>耗时</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td style="padding-left: 20px;">17:35:12</td>
+                            <td>Info</td>
+                            <td>Auto Switch</td>
+                            <td>Condition met. Switching to Power Saving.</td>
+                            <td>-</td>
+                        </tr>
+                        <tr>
+                            <td style="padding-left: 20px;">17:35:12</td>
+                            <td>Info</td>
+                            <td>Call ryzenadj</td>
+                            <td>--fast-limit=25000 --slow-limit=15000 ... --power-saving</td>
+                            <td>15ms</td>
+                        </tr>
+                        <tr>
+                            <td style="padding-left: 20px;">17:10:05</td>
+                            <td>Error</td>
+                            <td>Hotkey Reg</td>
+                            <td>Ctrl+Alt+S already registered by another application.</td>
+                            <td>2ms</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- 关于 -->
+        <div id="about" class="page">
+            <h1>关于</h1>
+            
+            <div class="card" style="text-align: center; padding: 40px 20px;">
+                <div style="font-family: var(--icon-font); color: var(--accent-color); font-size: 48px; margin-bottom: 16px;">&#xEC4A;</div>
+                <h2 style="margin: 0 0 8px 0; font-size: 24px;">RyzenTunerNext</h2>
+                <div style="color: var(--text-secondary); margin-bottom: 24px;">版本 1.0.0 (Build 20260624)</div>
+
+                <div style="display: inline-flex; gap: 16px; margin-bottom: 32px;">
+                    <button class="btn"><span style="font-family: var(--icon-font); margin-right: 6px;">&#xE12B;</span>GitHub</button>
+                    <button class="btn"><span style="font-family: var(--icon-font); margin-right: 6px;">&#xE118;</span>版本发布</button>
+                    <button class="btn"><span style="font-family: var(--icon-font); margin-right: 6px;">&#xE1D3;</span>报告问题</button>
+                </div>
+
+                <div style="text-align: left; max-width: 400px; margin: 0 auto; background: #F9F9F9; padding: 16px; border-radius: 8px; border: 1px solid var(--border-color);">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span style="color: var(--text-secondary);">运行时间</span>
+                        <span>02:15:43</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span style="color: var(--text-secondary);">核心引擎 (RyzenAdj)</span>
+                        <span>v0.19.0（2026-06-24）</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // 简单的标签页切换逻辑
+        function switchPage(pageId) {
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+            document.getElementById(pageId).classList.add('active');
+            event.currentTarget.classList.add('active');
+        }
+    </script>
+</body>
+</html>
