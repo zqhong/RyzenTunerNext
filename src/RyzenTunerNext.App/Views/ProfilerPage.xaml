@@ -89,10 +89,10 @@
                         </Grid.ColumnDefinitions>
                         <TextBlock Grid.Column="0" Text="{x:Bind FastLimitDisplay}" />
                         <TextBlock Grid.Column="1" Text="{x:Bind ScoreDisplay}" />
-                        <TextBlock Grid.Column="2" Text="{x:Bind AvgFrequencyDisplay, Mode=OneWay}" />
-                        <TextBlock Grid.Column="3" Text="{x:Bind AvgPowerDisplay, Mode=OneWay}" />
-                        <TextBlock Grid.Column="4" Text="{x:Bind MaxTempDisplay, Mode=OneWay}" />
-                        <TextBlock Grid.Column="5" Text="{x:Bind EfficiencyDisplay, Mode=OneWay}" />
+                        <TextBlock Grid.Column="2" Text="{x:Bind AvgFrequencyDisplay}" />
+                        <TextBlock Grid.Column="3" Text="{x:Bind AvgPowerDisplay}" />
+                        <TextBlock Grid.Column="4" Text="{x:Bind MaxTempDisplay}" />
+                        <TextBlock Grid.Column="5" Text="{x:Bind EfficiencyDisplay}" />
                     </Grid>
                 </DataTemplate>
             </ListView.ItemTemplate>
