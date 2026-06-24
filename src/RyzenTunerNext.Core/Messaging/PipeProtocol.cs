@@ -45,7 +45,7 @@ public static class PipeProtocol
 
         var length = BinaryPrimitives.ReadUInt32LittleEndian(lengthBuffer);
         if (length > 1024 * 1024) // 限制 1MB
-            throw new ProtocolViolationException("消息长度超过 1MB 限制");
+            throw new InvalidDataException("消息长度超过 1MB 限制");
 
         var payloadBuffer = new byte[length];
         if (!await ReadExactlyAsync(stream, payloadBuffer, (int)length, ct))
