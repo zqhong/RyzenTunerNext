@@ -49,11 +49,14 @@ public sealed partial class MainWindow : Window
 
         Title = "RyzenTunerNext";
 
-        // 设置窗口大小和最小尺寸
+        // 设置窗口大小
         var hWnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
         var windowId = Win32Interop.GetWindowIdFromWindow(hWnd);
         var appWindow = AppWindow.GetFromWindowId(windowId);
         appWindow.Resize(new Windows.Graphics.SizeInt32(1000, 700));
+
+        // 窗口关闭时清理资源
+        this.Closed += (_, _) => Cleanup();
 
         // 初始化系统托盘
         _trayHelper = new TrayIconHelper(this);
@@ -161,21 +164,6 @@ public sealed partial class MainWindow : Window
     #endregion
 
     #region 关闭到托盘
-
-    private void Window_Closing(Window sender, WindowClosingEventArgs e)
-    {
-        if (!_forceClose)
-        {
-            // 阻止真正关闭，最小化到托盘
-            e.Cancel = true;
-            _trayHelper.MinimizeToTray();
-        }
-        else
-        {
-            // 真正退出时清理
-            Cleanup();
-        }
-    }
 
     private void Cleanup()
     {
