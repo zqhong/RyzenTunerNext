@@ -147,6 +147,7 @@ CREATE INDEX idx_logs_level ON logs(level);
 | `apply_interval` | `4000` | 参数循环写入间隔 (ms) |
 | `log_retention_days` | `30` | 日志保留天数 |
 | `auto_idle_timeout` | `300000` | 自动模式空闲超时 (ms, 5分钟) |
+| `auto_cpu_threshold` | `10` | 自动模式 CPU 负载阈值 (%) |
 | `anti_cheat_warning_shown` | `false` | 是否已显示反作弊警告 |
 
 ### 4.3 Dapper 数据访问
@@ -734,59 +735,80 @@ public partial class HomeViewModel : ObservableObject
 
 ### 9.1 切换逻辑
 
-自动模式基于两个维度决定能耗模式：**电源状态** + **用户活动**。
+不考虑 AC/电池电源状态，仅根据**用户活动** + **CPU 负载**两个维度判断。
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                       自动模式                               │
 │                                                             │
-│  电源状态判断 (优先级高，立即响应):                           │
-│    AC 电源接入  → 性能模式                                   │
-│    电池供电     → 进入空闲检测                               │
+│  性能模式 → 省电模式:                                        │
+│    条件: 用户无输入 ≥ 5 分钟 且 CPU 负载 ≤ 10% 持续 5 分钟   │
+│    防抖: 满足条件后延迟 1 分钟再切换                         │
 │                                                             │
-│  空闲检测 (仅电池供电时生效):                                │
-│    用户无输入 ≥ 5 分钟 → 省电模式                            │
-│    用户有输入         → 性能模式                             │
+│  省电模式 → 性能模式:                                        │
+│    条件: 用户有输入 或 CPU 负载 > 10%                        │
+│    立即切换                                                  │
 │                                                             │
-│  防抖:                                                      │
-│    任意切换后冷却 10 分钟                                    │
-│    电池 → 省电: 满足条件后延迟 1 分钟再切换                  │
-│    空闲 → 性能: 立即切换 (用户操作需要快速响应)              │
+│  任意切换后冷却 10 分钟                                      │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**设计思路**：
-- 笔记本接 AC 电源时通常需要性能，用电池时需要省电
-- 电池供电 + 用户无操作 = 可以安全降低功耗
-- 去掉 CPU 负载检测，避免引入额外依赖（PerformanceCounter/WMI），且电源状态 + 用户输入已足够判断
-
-### 9.2 电源状态检测
-
-使用 Win32 API `GetSystemPowerStatus`：
-
-```csharp
-[DllImport("kernel32.dll")]
-static extern bool GetSystemPowerStatus(out SYSTEM_POWER_STATUS lpSystemPowerStatus);
-
-[StructLayout(LayoutKind.Sequential)]
-struct SYSTEM_POWER_STATUS
-{
-    public byte ACLineStatus;        // 0 = 电池, 1 = AC, 255 = 未知
-    public byte BatteryFlag;
-    public byte BatteryLifePercent;
-    public byte Reserved1;
-    public int BatteryLifeTime;
-    public int BatteryFullLifeTime;
-}
-
-public static bool IsOnAcPower()
-{
-    GetSystemPowerStatus(out var status);
-    return status.ACLineStatus == 1;
-}
+```
+状态转移:
+         ┌──────────────────────────────────────────────────────┐
+         │                                                      │
+         ▼                                                      │
+   ┌───────────┐  无输入≥5min 且 CPU≤10%持续5min  ┌────────────┤
+   │ 性能模式   │ ◄────────────────────────────── │  候选省电  │
+   │           │                                  │  (等1min)  │
+   └───────────┘                                  └─────┬──────┘
+         │                                              │
+         │  有输入 或 CPU>10%                           │ 确认
+         │  (立即切换)                                  │
+         └──────────────────────────────────────────────┘
 ```
 
-同时监听电源切换事件（参见 6.2 SystemEventMonitor），AC/电池切换时立即触发模式切换。
+**设计思路**：
+- 两个条件必须同时满足才切换到省电，避免误判（用户在看视频时 CPU 有负载但无键鼠输入，不应切省电）
+- 从省电切回性能时，任一条件不满足即立即切换（响应快）
+
+### 9.2 CPU 负载检测
+
+```csharp
+/// <summary>
+/// 通过 WMI 获取 CPU 负载百分比。
+/// 每 5 秒采样一次，保留最近 1 分钟的采样值。
+/// </summary>
+public class CpuLoadMonitor
+{
+    private readonly Queue<(DateTime Time, int Load)> _samples = new();
+    private readonly TimeSpan _window = TimeSpan.FromMinutes(1);
+
+    public void Sample()
+    {
+        using var searcher = new ManagementObjectSearcher("SELECT LoadPercentage FROM Win32_Processor");
+        foreach (var obj in searcher.Get())
+        {
+            int load = Convert.ToInt32(obj["LoadPercentage"]);
+            _samples.Enqueue((DateTime.Now, load));
+        }
+
+        // 清理过期采样
+        var cutoff = DateTime.Now - _window;
+        while (_samples.Count > 0 && _samples.Peek().Time < cutoff)
+            _samples.Dequeue();
+    }
+
+    /// <summary>
+    /// 最近 1 分钟内所有采样是否都 ≤ 阈值。
+    /// </summary>
+    public bool IsSustainedBelow(int threshold)
+    {
+        if (_samples.Count < 6) return false; // 至少 30 秒数据
+        return _samples.All(s => s.Load <= threshold);
+    }
+}
+```
 
 ### 9.3 用户输入检测
 
