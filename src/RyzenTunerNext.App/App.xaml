@@ -4,7 +4,8 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:local="using:RyzenTunerNext.App"
-    xmlns:helpers="using:RyzenTunerNext.App.Helpers">
+    xmlns:helpers="using:RyzenTunerNext.App.Helpers"
+    xmlns:tb="using:H.NotifyIcon">
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>

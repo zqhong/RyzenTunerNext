@@ -1,0 +1,161 @@
+using System.Diagnostics;
+using System.ServiceProcess;
+
+namespace RyzenTunerNext.App.Helpers;
+
+/// <summary>
+/// Windows Service 管理：安装/卸载/启动/停止/查询状态。
+/// 通过 sc.exe 实现。
+/// </summary>
+internal static class ServiceManager
+{
+    private const string ServiceName = "RyzenTunerNext";
+
+    /// <summary>
+    /// 获取 Service 当前状态
+    /// </summary>
+    public static ServiceState GetServiceState()
+    {
+        try
+        {
+            using var sc = new ServiceController(ServiceName);
+            // 检查服务是否存在
+            _ = sc.Status;
+            return new ServiceState
+            {
+                IsInstalled = true,
+                IsRunning = sc.Status == ServiceControllerStatus.Running,
+                StatusText = sc.Status.ToString()
+            };
+        }
+        catch (InvalidOperationException)
+        {
+            // 服务不存在
+            return new ServiceState { IsInstalled = false, IsRunning = false, StatusText = "未安装" };
+        }
+        catch
+        {
+            return new ServiceState { IsInstalled = false, IsRunning = false, StatusText = "检测失败" };
+        }
+    }
+
+    /// <summary>
+    /// 安装 Service
+    /// </summary>
+    public static async Task<(bool Success, string Message)> InstallAsync()
+    {
+        var serviceExePath = GetServiceExePath();
+        if (string.IsNullOrEmpty(serviceExePath))
+        {
+            return (false, "找不到 Service 可执行文件。请确认 RyzenTunerNext.Service.exe 存在。");
+        }
+
+        var result = await RunScAsync($"create {ServiceName} binPath= \"{serviceExePath}\" start= auto DisplayName= \"RyzenTunerNext Service\"");
+        if (result.Success)
+        {
+            // 设置失败恢复策略
+            await RunScAsync($"failure {ServiceName} reset= 86400 actions= restart/5000");
+            return (true, "Service 安装成功");
+        }
+        return (false, $"安装失败: {result.Output}");
+    }
+
+    /// <summary>
+    /// 卸载 Service
+    /// </summary>
+    public static async Task<(bool Success, string Message)> UninstallAsync()
+    {
+        // 先停止
+        await StopAsync();
+        await Task.Delay(1000);
+
+        var result = await RunScAsync($"delete {ServiceName}");
+        if (result.Success)
+        {
+            return (true, "Service 已卸载");
+        }
+        return (false, $"卸载失败: {result.Output}");
+    }
+
+    /// <summary>
+    /// 启动 Service
+    /// </summary>
+    public static async Task<(bool Success, string Message)> StartAsync()
+    {
+        var result = await RunScAsync($"start {ServiceName}");
+        if (result.Success)
+        {
+            return (true, "Service 已启动");
+        }
+        return (false, $"启动失败: {result.Output}");
+    }
+
+    /// <summary>
+    /// 停止 Service
+    /// </summary>
+    public static async Task<(bool Success, string Message)> StopAsync()
+    {
+        var result = await RunScAsync($"stop {ServiceName}");
+        if (result.Success)
+        {
+            return (true, "Service 已停止");
+        }
+        return (false, $"停止失败: {result.Output}");
+    }
+
+    private static string? GetServiceExePath()
+    {
+        // Service exe 通常和 App exe 在同一目录或相邻目录
+        var appDir = AppContext.BaseDirectory;
+        var serviceExe = Path.Combine(appDir, "RyzenTunerNext.Service.exe");
+        if (File.Exists(serviceExe)) return serviceExe;
+
+        // 尝试上级目录
+        var parentDir = Path.GetDirectoryName(appDir);
+        if (parentDir != null)
+        {
+            serviceExe = Path.Combine(parentDir, "RyzenTunerNext.Service", "RyzenTunerNext.Service.exe");
+            if (File.Exists(serviceExe)) return serviceExe;
+        }
+
+        return null;
+    }
+
+    private static async Task<(bool Success, string Output)> RunScAsync(string arguments)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = "sc.exe",
+                Arguments = arguments,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            };
+
+            using var process = Process.Start(psi);
+            if (process == null) return (false, "无法启动 sc.exe");
+
+            var output = await process.StandardOutput.ReadToEndAsync();
+            var error = await process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+
+            var success = process.ExitCode == 0;
+            var message = success ? output.Trim() : (error.Trim() + " " + output.Trim()).Trim();
+            return (success, message);
+        }
+        catch (Exception ex)
+        {
+            return (false, ex.Message);
+        }
+    }
+}
+
+internal class ServiceState
+{
+    public bool IsInstalled { get; set; }
+    public bool IsRunning { get; set; }
+    public string StatusText { get; set; } = string.Empty;
+}

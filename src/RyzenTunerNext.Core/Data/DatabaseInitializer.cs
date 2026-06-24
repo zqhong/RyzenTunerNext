@@ -53,6 +53,13 @@ public static class DatabaseInitializer
 
                 CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON logs(timestamp DESC);
                 CREATE INDEX IF NOT EXISTS idx_logs_level ON logs(level);
+
+                -- 状态缓存表 (GUI 重启后可恢复状态显示)
+                CREATE TABLE IF NOT EXISTS status_cache (
+                    key         TEXT PRIMARY KEY,
+                    value       TEXT NOT NULL,
+                    updated_at  TEXT NOT NULL
+                );
                 """;
             cmd.ExecuteNonQuery();
         }

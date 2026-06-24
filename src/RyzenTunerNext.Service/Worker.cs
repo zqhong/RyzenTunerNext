@@ -59,7 +59,10 @@ public class Worker : BackgroundService
         // 4. 发送 Service 状态
         await BroadcastServiceStateAsync(stoppingToken);
 
-        // 5. 主循环
+        // 5. 启动日志清理后台任务
+        _ = RunLogCleanupLoopAsync(stoppingToken);
+
+        // 6. 主循环
         while (!stoppingToken.IsCancellationRequested)
         {
             try
@@ -214,6 +217,29 @@ public class Worker : BackgroundService
         };
 
         await _pipeServer.BroadcastAsync(message, ct);
+    }
+
+    /// <summary>
+    /// 日志自动清理：每 6 小时执行一次，按配置的保留天数清理过期日志。
+    /// </summary>
+    private async Task RunLogCleanupLoopAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                var retentionDays = await _settings.GetLogRetentionDaysAsync();
+                await _logs.CleanupOlderThanAsync(retentionDays);
+                _logger.LogDebug("日志清理完成，保留 {Days} 天", retentionDays);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "日志清理失败");
+            }
+
+            // 每 6 小时清理一次
+            await Task.Delay(TimeSpan.FromHours(6), ct);
+        }
     }
 
     public override async Task StopAsync(CancellationToken cancellationToken)

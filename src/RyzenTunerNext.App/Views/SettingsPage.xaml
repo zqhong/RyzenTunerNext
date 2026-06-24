@@ -15,7 +15,31 @@
 
             <TextBlock Text="设置" Style="{StaticResource TitleTextBlockStyle}" />
 
-            <!-- 性能模式参数 -->
+            <!-- ==================== Service 管理 ==================== -->
+            <TextBlock Text="Service 管理" Style="{StaticResource SubtitleTextBlockStyle}" />
+            <StackPanel Spacing="12">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <FontIcon
+                        FontFamily="Segoe Fluent Icons"
+                        FontSize="16"
+                        Glyph="{Binding ServiceRunning, Converter={StaticResource BoolToGlyphConverter}}" />
+                    <TextBlock Text="{Binding ServiceStatusText, Mode=OneWay}" VerticalAlignment="Center" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Content="安装" Command="{Binding InstallServiceCommand}"
+                            Visibility="{Binding ServiceInstalled, Converter={StaticResource BoolInverseVisibility}}" />
+                    <Button Content="卸载" Command="{Binding UninstallServiceCommand}"
+                            Visibility="{Binding ServiceInstalled, Converter={StaticResource BoolToVisibility}}" />
+                    <Button Content="启动" Command="{Binding StartServiceCommand}"
+                            Visibility="{Binding ServiceRunning, Converter={StaticResource BoolInverseVisibility}}"
+                            Style="{StaticResource AccentButtonStyle}" />
+                    <Button Content="停止" Command="{Binding StopServiceCommand}"
+                            Visibility="{Binding ServiceRunning, Converter={StaticResource BoolToVisibility}}" />
+                    <Button Content="刷新状态" Command="{Binding RefreshServiceStatusCommand}" />
+                </StackPanel>
+            </StackPanel>
+
+            <!-- ==================== 性能模式参数 ==================== -->
             <TextBlock Text="性能模式" Style="{StaticResource SubtitleTextBlockStyle}" />
             <StackPanel Spacing="12">
                 <NumberBox
@@ -40,7 +64,7 @@
                 </NumberBox>
             </StackPanel>
 
-            <!-- 省电模式参数 -->
+            <!-- ==================== 省电模式参数 ==================== -->
             <TextBlock Text="省电模式" Style="{StaticResource SubtitleTextBlockStyle}" />
             <StackPanel Spacing="12">
                 <NumberBox
@@ -57,7 +81,7 @@
                     SpinButtonPlacementMode="Inline" />
             </StackPanel>
 
-            <!-- 全局配置 -->
+            <!-- ==================== 全局配置 ==================== -->
             <TextBlock Text="全局配置" Style="{StaticResource SubtitleTextBlockStyle}" />
             <StackPanel Spacing="12">
                 <NumberBox
@@ -84,7 +108,65 @@
                     SpinButtonPlacementMode="Inline" />
             </StackPanel>
 
-            <!-- 保存按钮 -->
+            <!-- ==================== 快捷键 ==================== -->
+            <TextBlock Text="快捷键" Style="{StaticResource SubtitleTextBlockStyle}" />
+            <StackPanel Spacing="12">
+                <StackPanel Spacing="4">
+                    <TextBlock Text="切换模式" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                    <TextBox
+                        Header="快捷键组合"
+                        PlaceholderText="点击后按下快捷键组合..."
+                        Text="{Binding HotkeyToggleMode, Mode=TwoWay}"
+                        IsReadOnly="True"
+                        GotFocus="HotkeyBox_GotFocus"
+                        LostFocus="HotkeyBox_LostFocus"
+                        KeyDown="HotkeyBox_KeyDown"
+                        Tag="ToggleMode" />
+                </StackPanel>
+                <StackPanel Spacing="4">
+                    <TextBlock Text="立即应用" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                    <TextBox
+                        Header="快捷键组合"
+                        PlaceholderText="点击后按下快捷键组合..."
+                        Text="{Binding HotkeyApplyNow, Mode=TwoWay}"
+                        IsReadOnly="True"
+                        GotFocus="HotkeyBox_GotFocus"
+                        LostFocus="HotkeyBox_LostFocus"
+                        KeyDown="HotkeyBox_KeyDown"
+                        Tag="ApplyNow" />
+                </StackPanel>
+                <StackPanel Spacing="4">
+                    <TextBlock Text="显示/隐藏窗口" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                    <TextBox
+                        Header="快捷键组合"
+                        PlaceholderText="点击后按下快捷键组合..."
+                        Text="{Binding HotkeyShowWindow, Mode=TwoWay}"
+                        IsReadOnly="True"
+                        GotFocus="HotkeyBox_GotFocus"
+                        LostFocus="HotkeyBox_LostFocus"
+                        KeyDown="HotkeyBox_KeyDown"
+                        Tag="ShowWindow" />
+                </StackPanel>
+            </StackPanel>
+
+            <!-- ==================== 外观 ==================== -->
+            <TextBlock Text="外观" Style="{StaticResource SubtitleTextBlockStyle}" />
+            <StackPanel Spacing="12">
+                <ComboBox
+                    Header="主题"
+                    ItemsSource="{Binding ThemeOptions}"
+                    SelectedIndex="{Binding SelectedThemeIndex, Mode=TwoWay}"
+                    Width="200"
+                    HorizontalAlignment="Left" />
+                <ComboBox
+                    Header="语言"
+                    ItemsSource="{Binding LanguageOptions}"
+                    SelectedIndex="{Binding SelectedLanguageIndex, Mode=TwoWay}"
+                    Width="200"
+                    HorizontalAlignment="Left" />
+            </StackPanel>
+
+            <!-- ==================== 保存按钮 ==================== -->
             <Button
                 Content="保存设置"
                 Style="{StaticResource AccentButtonStyle}"

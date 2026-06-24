@@ -21,6 +21,7 @@
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.22621.3233" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.2" />
     <PackageReference Include="H.NotifyIcon.WinUI" Version="2.1.3" />
+    <PackageReference Include="System.ServiceProcess.ServiceController" Version="8.0.0" />
   </ItemGroup>
 
   <ItemGroup>
@@ -32,6 +33,12 @@
     <Content Include="..\..\lib\libryzenadj.dll" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\lib\WinRing0x64.dll" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\lib\WinRing0x64.sys" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 应用图标 (系统托盘) -->
+    <Content Include="Assets\app.ico" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\app.png" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
