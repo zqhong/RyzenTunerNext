@@ -5,7 +5,10 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:views="using:RyzenTunerNext.App.Views"
     xmlns:tb="using:H.NotifyIcon"
-    Title="RyzenTunerNext">
+    Title="RyzenTunerNext"
+    MinWidth="800"
+    MinHeight="600"
+    Closing="Window_Closing">
 
     <Grid>
         <NavigationView
