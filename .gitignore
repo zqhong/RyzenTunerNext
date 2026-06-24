@@ -1,2 +1,35 @@
 .DS_Store
 .idea
+
+# Build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+# Visual Studio
+.vs/
+*.rsuser
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# NuGet
+**/[Pp]ackages/*
+*.nupkg
+
+# Build output
+*.exe
+*.pdb
+*.ilk
+
+# Test results
+[Tt]est[Rr]esult*/
+
+# Publish output
+publish/
