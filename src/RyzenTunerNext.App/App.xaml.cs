@@ -16,6 +16,7 @@ public partial class App : Application
     public static PipeClient PipeClient { get; private set; } = null!;
 
     private Window? _window;
+    private CancellationTokenSource? _pipeClientCts;
 
     public App()
     {
@@ -37,6 +38,10 @@ public partial class App : Application
         // 初始化 Pipe Client
         var loggerFactory = Microsoft.Extensions.Logging.LoggerFactory.Create(builder => { });
         PipeClient = new PipeClient(loggerFactory.CreateLogger<PipeClient>());
+
+        // 启动 Pipe Client 连接
+        _pipeClientCts = new CancellationTokenSource();
+        PipeClient.Start(_pipeClientCts.Token);
 
         _window = new MainWindow();
         _window.Activate();

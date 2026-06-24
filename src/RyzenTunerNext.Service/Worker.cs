@@ -94,9 +94,22 @@ public class Worker : BackgroundService
                 // 推送状态到 GUI
                 await BroadcastStatusAsync(profile, result, stoppingToken);
 
-                // 等待间隔
+                // 等待间隔，但每 100ms 检查一次 immediateApply
                 var interval = await _settings.GetApplyIntervalAsync();
-                await Task.Delay(interval, stoppingToken);
+                var elapsed = 0;
+                _immediateApply = false;
+
+                while (elapsed < interval && !stoppingToken.IsCancellationRequested)
+                {
+                    if (_immediateApply)
+                    {
+                        _logger.LogInformation("收到立即应用信号，跳过等待");
+                        _immediateApply = false;
+                        break;
+                    }
+                    await Task.Delay(100, stoppingToken);
+                    elapsed += 100;
+                }
             }
             catch (OperationCanceledException)
             {
@@ -183,7 +196,8 @@ public class Worker : BackgroundService
                 SlowLimit = result.Actual.SlowLimit,
                 TctlTemp = result.Actual.TctlTemp,
                 SocketPower = result.Actual.SocketPower,
-                CpuTemp = metrics.CpuTemp
+                CpuTemp = metrics.CpuTemp,
+                CpuFrequency = metrics.AvgFrequency
             }
         };
 

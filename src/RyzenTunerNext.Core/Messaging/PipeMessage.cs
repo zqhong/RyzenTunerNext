@@ -64,6 +64,9 @@ public class ActualLimitData
 
     [JsonPropertyName("cpu_temp")]
     public float CpuTemp { get; set; }
+
+    [JsonPropertyName("cpu_frequency")]
+    public float CpuFrequency { get; set; }
 }
 
 public class LogMessage : PipeMessage

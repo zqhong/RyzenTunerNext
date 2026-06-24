@@ -54,6 +54,7 @@ public partial class HomeViewModel : ObservableObject
             TctlTempActual = msg.ActualLimits.TctlTemp;
             SocketPower = msg.ActualLimits.SocketPower / 1000.0;
             CpuTemp = msg.ActualLimits.CpuTemp;
+            CpuFrequency = msg.ActualLimits.CpuFrequency;
         }
 
         // 检查 cap 警告
