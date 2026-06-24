@@ -71,6 +71,14 @@
                         Glyph="{Binding RyzenAdjInitialized, Converter={StaticResource BoolToGlyphConverter}}" />
                     <TextBlock Text="RyzenAdj 引擎" />
                 </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <FontIcon
+                        FontFamily="Segoe Fluent Icons"
+                        FontSize="16"
+                        Foreground="{ThemeResource SystemAccentColor}"
+                        Glyph="{Binding ServiceRunning, Converter={StaticResource BoolToGlyphConverter}}" />
+                    <TextBlock Text="Windows Service" />
+                </StackPanel>
             </StackPanel>
 
             <!-- 说明 -->

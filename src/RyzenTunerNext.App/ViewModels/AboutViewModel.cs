@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using RyzenTunerNext.App.Helpers;
 
 namespace RyzenTunerNext.App.ViewModels;
 
@@ -18,5 +19,9 @@ public partial class AboutViewModel : ObservableObject
         {
             CpuFamily = App.RyzenAdj.GetCpuFamily().ToString();
         }
+
+        // 检查 Service 运行状态
+        var serviceState = ServiceManager.GetServiceState();
+        ServiceRunning = serviceState.IsRunning;
     }
 }

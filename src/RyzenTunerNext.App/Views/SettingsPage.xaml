@@ -72,13 +72,21 @@
                     Value="{Binding FastLimitPowersaving, Mode=TwoWay}"
                     Minimum="5000"
                     Maximum="100000"
-                    SpinButtonPlacementMode="Inline" />
+                    SpinButtonPlacementMode="Inline">
+                    <ToolTipService.ToolTip>
+                        <ToolTip Content="峰值功耗上限 (PPT FAST)。必须大于等于 Slow Limit。部分机型 BIOS 锁定了最大值。" />
+                    </ToolTipService.ToolTip>
+                </NumberBox>
                 <NumberBox
                     Header="Slow Limit (mW)"
                     Value="{Binding SlowLimitPowersaving, Mode=TwoWay}"
                     Minimum="5000"
                     Maximum="100000"
-                    SpinButtonPlacementMode="Inline" />
+                    SpinButtonPlacementMode="Inline">
+                    <ToolTipService.ToolTip>
+                        <ToolTip Content="持续功耗上限 (PPT SLOW)。STAPM Limit 会自动等于此值。" />
+                    </ToolTipService.ToolTip>
+                </NumberBox>
             </StackPanel>
 
             <!-- ==================== 全局配置 ==================== -->

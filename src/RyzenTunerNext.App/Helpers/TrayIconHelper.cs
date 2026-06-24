@@ -138,17 +138,23 @@ internal class TrayIconHelper
         if (_currentModeText != null)
             _currentModeText.Text = $"当前模式: {modeText}";
 
-        if (msg.SetLimits != null && _currentLimitsText != null)
+        // 显示 Fast Limit 设置值 vs 实际值
+        if (msg.SetLimits != null && msg.ActualLimits != null && _currentLimitsText != null)
+        {
+            var fastSet = msg.SetLimits.FastLimit / 1000.0;
+            var fastActual = msg.ActualLimits.FastLimit / 1000.0;
+            _currentLimitsText.Text = $"Fast Limit: {fastSet:F0}W → 实际 {fastActual:F1}W";
+        }
+        else if (msg.SetLimits != null && _currentLimitsText != null)
         {
             var fastW = msg.SetLimits.FastLimit / 1000.0;
-            var slowW = msg.SetLimits.SlowLimit / 1000.0;
-            _currentLimitsText.Text = $"Fast: {fastW:F0}W  Slow: {slowW:F0}W  Tctl: {msg.SetLimits.TctlTemp}℃";
+            _currentLimitsText.Text = $"Fast Limit: {fastW:F0}W";
         }
 
         if (msg.ActualLimits != null && _currentMetricsText != null)
         {
             var power = msg.ActualLimits.SocketPower / 1000.0;
-            _currentMetricsText.Text = $"CPU: {msg.ActualLimits.CpuTemp:F0}℃ | 功耗: {power:F1}W | {msg.ActualLimits.CpuFrequency:F0}MHz";
+            _currentMetricsText.Text = $"CPU 温度: {msg.ActualLimits.CpuTemp:F0}℃ | 功耗: {power:F1}W";
         }
 
         // 更新模式 RadioButtons（避免循环触发）
@@ -161,7 +167,7 @@ internal class TrayIconHelper
     public void UpdateServiceStatus(bool connected)
     {
         if (_serviceStatusText != null)
-            _serviceStatusText.Text = connected ? "Service 状态: 已连接" : "Service 状态: 未连接";
+            _serviceStatusText.Text = connected ? "Service 状态: 运行中" : "Service 状态: 未连接";
     }
 
     /// <summary>

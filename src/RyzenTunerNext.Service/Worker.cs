@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using RyzenTunerNext.Core.Data;
@@ -15,6 +16,7 @@ public class Worker : BackgroundService
     private readonly RyzenAdjWrapper _ryzenAdj;
     private readonly SettingsRepository _settings;
     private readonly LogRepository _logs;
+    private readonly StatusCacheRepository _statusCache;
     private readonly PipeServer _pipeServer;
     private readonly SystemEventMonitor _eventMonitor;
     private readonly ModeScheduler _modeScheduler;
@@ -27,6 +29,7 @@ public class Worker : BackgroundService
         RyzenAdjWrapper ryzenAdj,
         SettingsRepository settings,
         LogRepository logs,
+        StatusCacheRepository statusCache,
         PipeServer pipeServer,
         SystemEventMonitor eventMonitor,
         ModeScheduler modeScheduler,
@@ -36,6 +39,7 @@ public class Worker : BackgroundService
         _ryzenAdj = ryzenAdj;
         _settings = settings;
         _logs = logs;
+        _statusCache = statusCache;
         _pipeServer = pipeServer;
         _eventMonitor = eventMonitor;
         _modeScheduler = modeScheduler;
@@ -53,8 +57,8 @@ public class Worker : BackgroundService
         _pipeServer.Start(stoppingToken);
 
         // 3. 注册系统事件
-        _eventMonitor.WakeUp += OnSystemEvent;
-        _eventMonitor.PowerSourceChanged += OnSystemEvent;
+        _eventMonitor.WakeUp += OnWakeUp;
+        _eventMonitor.PowerSourceChanged += OnPowerSourceChanged;
 
         // 4. 发送 Service 状态
         await BroadcastServiceStateAsync(stoppingToken);
@@ -148,8 +152,15 @@ public class Worker : BackgroundService
         await _logs.ErrorAsync("Service", "RyzenAdj 初始化失败，已达最大重试次数");
     }
 
-    private void OnSystemEvent(object? sender, EventArgs e)
+    private void OnWakeUp(object? sender, EventArgs e)
     {
+        _immediateApply = true;
+    }
+
+    private void OnPowerSourceChanged(object? sender, EventArgs e)
+    {
+        // AC/DC 切换时：立即下发参数 + 重评估自动模式状态
+        _modeScheduler.Reset();
         _immediateApply = true;
     }
 
@@ -204,7 +215,19 @@ public class Worker : BackgroundService
             }
         };
 
+        // 通过 Named Pipe 推送给 GUI
         await _pipeServer.BroadcastAsync(message, ct);
+
+        // 更新 SQLite 状态缓存（GUI 重启后可恢复状态显示）
+        try
+        {
+            var json = JsonSerializer.Serialize(message);
+            await _statusCache.SetAsync("last_status", json);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "写入状态缓存失败");
+        }
     }
 
     private async Task BroadcastServiceStateAsync(CancellationToken ct)

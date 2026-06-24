@@ -31,6 +31,9 @@ public sealed partial class MainWindow : Window
     private double _currentPower;
     private double _currentTemp;
 
+    // 自动恢复窗口检测
+    private string _previousMode = "Auto";
+
     /// <summary>
     /// 托盘图标双击恢复命令
     /// </summary>
@@ -114,13 +117,26 @@ public sealed partial class MainWindow : Window
             if (message is StatusUpdateMessage statusMsg)
             {
                 _trayHelper.UpdateFromStatus(statusMsg);
+
+                var previousMode = _currentMode;
                 _currentMode = statusMsg.Mode;
+
                 if (statusMsg.ActualLimits != null)
                 {
                     _currentPower = statusMsg.ActualLimits.SocketPower / 1000.0;
                     _currentTemp = statusMsg.ActualLimits.CpuTemp;
                 }
                 UpdateTrayTooltip();
+
+                // 自动恢复窗口：模式从省电切回性能时（用户变为活跃）
+                if (_trayHelper.IsMinimizedToTray
+                    && previousMode == "PowerSaving"
+                    && _currentMode == "Performance")
+                {
+                    _trayHelper.RestoreFromTray();
+                }
+
+                _previousMode = previousMode;
             }
             else if (message is ServiceStateMessage stateMsg)
             {
@@ -246,11 +262,17 @@ public sealed partial class MainWindow : Window
 
     private async Task CheckAutoMinimizeAsync()
     {
-        // 检查条件：自动模式 + 无用户输入 ≥ 5 分钟
+        // 检查条件：自动模式 + 电池供电 + 无用户输入 ≥ 5 分钟
         var mode = await App.Settings.GetEnergyModeAsync();
         if (mode != "Auto")
         {
             _autoMinimizeEnabled = false;
+            return;
+        }
+
+        // 仅电池供电时才自动最小化
+        if (!IsOnBattery())
+        {
             return;
         }
 
@@ -263,6 +285,20 @@ public sealed partial class MainWindow : Window
                 _trayHelper.MinimizeToTray();
             }
         }
+    }
+
+    /// <summary>
+    /// 检查是否使用电池供电（AC 电源离线）
+    /// </summary>
+    private static bool IsOnBattery()
+    {
+        var status = new SYSTEM_POWER_STATUS();
+        if (GetSystemPowerStatus(ref status))
+        {
+            // ACLineStatus: 0 = 离线(电池), 1 = 在线(AC), 255 = 未知
+            return status.ACLineStatus == 0;
+        }
+        return false;
     }
 
     private static TimeSpan GetIdleTime()
@@ -282,8 +318,22 @@ public sealed partial class MainWindow : Window
         public uint dwTime;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SYSTEM_POWER_STATUS
+    {
+        public byte ACLineStatus;
+        public byte BatteryFlag;
+        public byte BatteryLifePercent;
+        public byte Reserved1;
+        public int BatteryLifeTime;
+        public int BatteryFullLifeTime;
+    }
+
     [DllImport("user32.dll")]
     private static extern bool GetLastInputInfo(ref LASTINPUTINFO plii);
+
+    [DllImport("kernel32.dll")]
+    private static extern bool GetSystemPowerStatus(ref SYSTEM_POWER_STATUS lpSystemPowerStatus);
 
     #endregion
 

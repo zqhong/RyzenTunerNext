@@ -44,6 +44,9 @@
                     HorizontalAlignment="Left"
                     SelectedIndex="0"
                     SelectionChanged="ModeComboBox_SelectionChanged">
+                    <ToolTipService.ToolTip>
+                        <ToolTip Content="自动：根据用户活动和 CPU 负载自动切换省电/性能模式。省电：固定使用省电模式参数。性能：固定使用性能模式参数。" />
+                    </ToolTipService.ToolTip>
                     <ComboBoxItem Content="自动" />
                     <ComboBoxItem Content="省电模式" />
                     <ComboBoxItem Content="性能模式" />

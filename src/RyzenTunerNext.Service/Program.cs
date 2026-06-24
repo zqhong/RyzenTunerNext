@@ -18,6 +18,7 @@ var builder = Host.CreateDefaultBuilder(args)
         // 注册服务
         services.AddSingleton(new SettingsRepository(connectionString));
         services.AddSingleton(new LogRepository(connectionString));
+        services.AddSingleton(new StatusCacheRepository(connectionString));
         services.AddSingleton<RyzenAdjWrapper>();
         services.AddSingleton<PipeServer>();
         services.AddSingleton<SystemEventMonitor>();

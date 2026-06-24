@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using RyzenTunerNext.App.ViewModels;
@@ -24,6 +25,9 @@ public sealed partial class HomePage : Page
 
         // 加载当前模式
         _ = LoadCurrentModeAsync();
+
+        // 从 StatusCache 恢复上次状态（GUI 重启后恢复显示）
+        _ = LoadCachedStatusAsync();
     }
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
@@ -79,5 +83,28 @@ public sealed partial class HomePage : Page
     private void ApplyNow_Click(object sender, RoutedEventArgs e)
     {
         _ = ViewModel.ApplyNowCommand.ExecuteAsync(null);
+    }
+
+    /// <summary>
+    /// 从 StatusCache 加载上次状态，GUI 重启后恢复显示。
+    /// PipeClient 收到新数据后会自动覆盖。
+    /// </summary>
+    private async Task LoadCachedStatusAsync()
+    {
+        try
+        {
+            var json = await App.StatusCache.GetAsync("last_status");
+            if (string.IsNullOrEmpty(json)) return;
+
+            var cached = JsonSerializer.Deserialize<StatusUpdateMessage>(json);
+            if (cached != null)
+            {
+                ViewModel.UpdateFromStatus(cached);
+            }
+        }
+        catch
+        {
+            // 忽略缓存读取失败
+        }
     }
 }
