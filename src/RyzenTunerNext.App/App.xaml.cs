@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Security.Principal;
+using Microsoft.Extensions.Logging;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using RyzenTunerNext.Core.Data;

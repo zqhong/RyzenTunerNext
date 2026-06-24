@@ -1,4 +1,5 @@
 using Microsoft.UI.Windowing;
+using Microsoft.UI.Win32Interop;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using RyzenTunerNext.Core.Messaging;

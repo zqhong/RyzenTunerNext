@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.UI.Windowing;
+using Microsoft.UI.Win32Interop;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
@@ -93,7 +94,7 @@ public sealed partial class MainWindow : Window
         TrayIcon.ContextFlyout = new Flyout
         {
             Content = contextMenu,
-            Placement = Microsoft.UI.Xaml.Controls.Primitives.PlacementMode.TopEdgeAlignedRight
+            Placement = Microsoft.UI.Xaml.Controls.Primitives.PlacementMode.Bottom
         };
 
         // 订阅托盘事件
@@ -370,7 +371,7 @@ public sealed partial class MainWindow : Window
             // 获取 XamlRoot
             if (Content is FrameworkElement root)
             {
-                await App.ShowPendingDialogsAsync(root.XamlRoot);
+                await ((App)Application.Current).ShowPendingDialogsAsync(root.XamlRoot);
             }
 
             // 窗口关闭时保存位置
