@@ -55,8 +55,7 @@ jobs:
             -c Debug `
             -p:Platform=${{ env.BUILD_PLATFORM }} `
             --no-restore `
-            --verbosity minimal `
-            -consoleLoggerParameters:ErrorsOnly
+            --verbosity normal
         shell: pwsh
 
       # 编译 Release
