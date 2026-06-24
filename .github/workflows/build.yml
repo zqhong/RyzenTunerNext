@@ -1,0 +1,185 @@
+---
+name: Build Windows
+
+on:
+  push:
+    branches: ["*"]
+
+env:
+  DOTNET_VERSION: "8.0.x"
+  BUILD_CONFIGURATION: "Release"
+  BUILD_PLATFORM: "x64"
+
+jobs:
+  build:
+    name: Build & Package
+    runs-on: windows-latest
+
+    steps:
+      # 检出代码
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 50
+
+      # 设置 .NET SDK
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      # 显示环境信息
+      - name: Environment Info
+        run: |
+          Write-Host "=== .NET SDK ==="
+          dotnet --version
+          dotnet --list-sdks
+          Write-Host ""
+          Write-Host "=== OS Info ==="
+          [System.Environment]::OSVersion
+          Write-Host ""
+          Write-Host "=== MSBuild ==="
+          $msbuild = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | Select-Object -First 1
+          if ($msbuild) { & $msbuild -version } else { Write-Host "MSBuild not found via vswhere" }
+        shell: pwsh
+
+      # 还原 NuGet 包
+      - name: Restore
+        run: dotnet restore RyzenTunerNext.sln --verbosity minimal
+
+      # 编译 Debug
+      - name: Build Debug
+        run: |
+          dotnet build RyzenTunerNext.sln `
+            -c Debug `
+            -p:Platform=${{ env.BUILD_PLATFORM }} `
+            --no-restore `
+            --verbosity minimal `
+            -consoleLoggerParameters:ErrorsOnly
+        shell: pwsh
+
+      # 编译 Release
+      - name: Build Release
+        run: |
+          dotnet build RyzenTunerNext.sln `
+            -c ${{ env.BUILD_CONFIGURATION }} `
+            -p:Platform=${{ env.BUILD_PLATFORM }} `
+            --no-restore `
+            --verbosity minimal `
+            -consoleLoggerParameters:ErrorsOnly
+        shell: pwsh
+
+      # 发布 App
+      - name: Publish App
+        run: |
+          dotnet publish src/RyzenTunerNext.App/RyzenTunerNext.App.csproj `
+            -c ${{ env.BUILD_CONFIGURATION }} `
+            -p:Platform=${{ env.BUILD_PLATFORM }} `
+            -o publish/app `
+            --verbosity minimal
+        shell: pwsh
+
+      # 发布 Service
+      - name: Publish Service
+        run: |
+          dotnet publish src/RyzenTunerNext.Service/RyzenTunerNext.Service.csproj `
+            -c ${{ env.BUILD_CONFIGURATION }} `
+            -p:Platform=${{ env.BUILD_PLATFORM }} `
+            -o publish/service `
+            --verbosity minimal
+        shell: pwsh
+
+      # 压缩构建产物
+      - name: Package Artifacts
+        run: |
+          Write-Host "=== 压缩 App ==="
+          Compress-Archive -Path "publish\app\*" -DestinationPath "RyzenTunerNext-App.zip" -Force
+
+          Write-Host "=== 压缩 Service ==="
+          Compress-Archive -Path "publish\service\*" -DestinationPath "RyzenTunerNext-Service.zip" -Force
+
+          Write-Host ""
+          Write-Host "=== 构建产物 ==="
+          Get-ChildItem *.zip | ForEach-Object {
+            $sizeMB = [math]::Round($_.Length / 1MB, 2)
+            Write-Host "$($_.Name) - ${sizeMB} MB"
+          }
+        shell: pwsh
+
+      # 输出构建摘要
+      - name: Build Summary
+        run: |
+          $summary = @"
+          ## 构建结果
+
+          | 配置 | 值 |
+          |------|-----|
+          | 配置 | ${{ env.BUILD_CONFIGURATION }} |
+          | 平台 | ${{ env.BUILD_PLATFORM }} |
+          | 目标框架 | net8.0-windows10.0.22621.0 |
+          | 运行器 | windows-latest |
+
+          ### 构建产物
+          - RyzenTunerNext-App.zip
+          - RyzenTunerNext-Service.zip
+
+          ### App 输出内容
+          ``````text
+          $(Get-ChildItem publish\app -Name | Select-Object -First 20 | Out-String)
+          ``````
+
+          ### Service 输出内容
+          ``````text
+          $(Get-ChildItem publish\service -Name | Select-Object -First 20 | Out-String)
+          ``````
+          "@
+
+          $summary | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+        shell: pwsh
+
+      # 上传 App 产物
+      - name: Upload App Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RyzenTunerNext-App
+          path: RyzenTunerNext-App.zip
+          retention-days: 30
+
+      # 上传 Service 产物
+      - name: Upload Service Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RyzenTunerNext-Service
+          path: RyzenTunerNext-Service.zip
+          retention-days: 30
+
+      # 失败时输出详细日志
+      - name: Failure Diagnostics
+        if: failure()
+        run: |
+          Write-Host "========================================="
+          Write-Host "  构建失败 - 详细诊断信息"
+          Write-Host "========================================="
+          Write-Host ""
+
+          Write-Host "=== NuGet 缓存位置 ==="
+          dotnet nuget locals all --list
+          Write-Host ""
+
+          Write-Host "=== 已安装的工作负载 ==="
+          dotnet workload list
+          Write-Host ""
+
+          Write-Host "=== 项目文件检查 ==="
+          Get-ChildItem -Recurse -Filter "*.csproj" | ForEach-Object {
+            Write-Host "  $($_.FullName)"
+          }
+          Write-Host ""
+
+          Write-Host "=== bin/obj 目录状态 ==="
+          if (Test-Path "src") {
+            Get-ChildItem src -Recurse -Directory -Filter "bin" | ForEach-Object {
+              Write-Host "  $($_.FullName): $(Get-ChildItem $_.FullName -Recurse -File | Measure-Object | Select-Object -ExpandProperty Count) files"
+            }
+          }
+        shell: pwsh
