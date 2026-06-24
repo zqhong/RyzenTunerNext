@@ -94,7 +94,7 @@ public sealed partial class MainWindow : Window
         TrayIcon.ContextFlyout = new Flyout
         {
             Content = contextMenu,
-            Placement = Microsoft.UI.Xaml.Controls.Primitives.PlacementMode.Bottom
+            Placement = Microsoft.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.Bottom
         };
 
         // 订阅托盘事件
