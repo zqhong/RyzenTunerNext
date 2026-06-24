@@ -105,12 +105,17 @@ internal static class ServiceManager
 
     private static string? GetServiceExePath()
     {
-        // Service exe 通常和 App exe 在同一目录或相邻目录
         var appDir = AppContext.BaseDirectory;
-        var serviceExe = Path.Combine(appDir, "RyzenTunerNext.Service.exe");
+
+        // 1. Service/ 子目录（单一 zip 解压结构）
+        var serviceExe = Path.Combine(appDir, "Service", "RyzenTunerNext.Service.exe");
         if (File.Exists(serviceExe)) return serviceExe;
 
-        // 尝试上级目录
+        // 2. 同目录（兼容手动放置场景）
+        serviceExe = Path.Combine(appDir, "RyzenTunerNext.Service.exe");
+        if (File.Exists(serviceExe)) return serviceExe;
+
+        // 3. 上级目录的 sibling（旧的两 zip 解压结构，向后兼容）
         var parentDir = Path.GetDirectoryName(appDir);
         if (parentDir != null)
         {
@@ -119,6 +124,31 @@ internal static class ServiceManager
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// 查询已注册的 Service 可执行文件路径（从注册表读取）。
+    /// 用于判断 Service 是否需要重新安装（路径变更时）。
+    /// </summary>
+    public static string? GetInstalledServiceExePath()
+    {
+        try
+        {
+            using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(
+                $@"SYSTEM\CurrentControlSet\Services\{ServiceName}");
+            if (key == null) return null;
+
+            var imagePath = key.GetValue("ImagePath") as string;
+            if (string.IsNullOrEmpty(imagePath)) return null;
+
+            // ImagePath 可能包含引号
+            imagePath = imagePath.Trim('"');
+            return imagePath;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static async Task<(bool Success, string Output)> RunScAsync(string arguments)

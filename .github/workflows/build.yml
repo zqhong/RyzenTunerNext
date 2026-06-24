@@ -89,14 +89,15 @@ jobs:
             --verbosity minimal
         shell: pwsh
 
-      # 压缩构建产物
+      # 合并 Service 到 App 目录的 Service/ 子目录，打包为单一 zip
       - name: Package Artifacts
         run: |
-          Write-Host "=== 压缩 App ==="
-          Compress-Archive -Path "publish\app\*" -DestinationPath "RyzenTunerNext-App.zip" -Force
+          Write-Host "=== 合并 Service 到 App 目录 ==="
+          New-Item -ItemType Directory -Path "publish\app\Service" -Force | Out-Null
+          Copy-Item -Path "publish\service\*" -Destination "publish\app\Service\" -Recurse -Force
 
-          Write-Host "=== 压缩 Service ==="
-          Compress-Archive -Path "publish\service\*" -DestinationPath "RyzenTunerNext-Service.zip" -Force
+          Write-Host "=== 压缩 ==="
+          Compress-Archive -Path "publish\app\*" -DestinationPath "RyzenTunerNext.zip" -Force
 
           Write-Host ""
           Write-Host "=== 构建产物 ==="
@@ -104,6 +105,13 @@ jobs:
             $sizeMB = [math]::Round($_.Length / 1MB, 2)
             Write-Host "$($_.Name) - ${sizeMB} MB"
           }
+
+          Write-Host ""
+          Write-Host "=== 根目录内容 ==="
+          Get-ChildItem publish\app -Name | Select-Object -First 30 | ForEach-Object { Write-Host "  $_" }
+          Write-Host ""
+          Write-Host "=== Service/ 子目录内容 ==="
+          Get-ChildItem publish\app\Service -Name | Select-Object -First 20 | ForEach-Object { Write-Host "  $_" }
         shell: pwsh
 
       # 输出构建摘要
@@ -120,37 +128,28 @@ jobs:
           | 运行器 | windows-latest |
 
           ### 构建产物
-          - RyzenTunerNext-App.zip
-          - RyzenTunerNext-Service.zip
+          - RyzenTunerNext.zip
 
-          ### App 输出内容
+          ### 根目录内容
           ``````text
           $(Get-ChildItem publish\app -Name | Select-Object -First 20 | Out-String)
           ``````
 
-          ### Service 输出内容
+          ### Service/ 子目录内容
           ``````text
-          $(Get-ChildItem publish\service -Name | Select-Object -First 20 | Out-String)
+          $(Get-ChildItem publish\app\Service -Name | Select-Object -First 20 | Out-String)
           ``````
           "@
 
           $summary | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
         shell: pwsh
 
-      # 上传 App 产物
-      - name: Upload App Artifact
+      # 上传产物
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: RyzenTunerNext-App
-          path: RyzenTunerNext-App.zip
-          retention-days: 30
-
-      # 上传 Service 产物
-      - name: Upload Service Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: RyzenTunerNext-Service
-          path: RyzenTunerNext-Service.zip
+          name: RyzenTunerNext
+          path: RyzenTunerNext.zip
           retention-days: 30
 
       # 失败时输出详细日志

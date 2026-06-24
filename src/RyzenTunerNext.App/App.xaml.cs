@@ -3,6 +3,7 @@ using System.Security.Principal;
 using Microsoft.Extensions.Logging;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using RyzenTunerNext.App.Helpers;
 using RyzenTunerNext.Core.Data;
 using RyzenTunerNext.Core.Messaging;
 using RyzenTunerNext.Core.Services;
@@ -68,7 +69,10 @@ public partial class App : Application
         // 3. 检查反作弊警告
         await ShowAntiCheatWarningIfNeededAsync();
 
-        // 4. 初始化 Pipe Client
+        // 4. 自动安装并启动 Service
+        await EnsureServiceInstalledAndRunningAsync();
+
+        // 5. 初始化 Pipe Client
         var loggerFactory = Microsoft.Extensions.Logging.LoggerFactory.Create(builder => { });
         PipeClient = new PipeClient(loggerFactory.CreateLogger<PipeClient>());
 
@@ -76,10 +80,65 @@ public partial class App : Application
         _pipeClientCts = new CancellationTokenSource();
         PipeClient.Start(_pipeClientCts.Token);
 
-        // 5. 创建主窗口
+        // 6. 创建主窗口
         MainWindow = new MainWindow();
         MainWindow.Activate();
     }
+
+    private async Task EnsureServiceInstalledAndRunningAsync()
+    {
+        // 检查 Service exe 是否存在
+        var expectedPath = ServiceManager.GetServiceExePath();
+        if (string.IsNullOrEmpty(expectedPath))
+        {
+            Logger.LogWarning("找不到 RyzenTunerNext.Service.exe，跳过 Service 自动安装");
+            return;
+        }
+
+        var state = ServiceManager.GetServiceState();
+
+        if (!state.IsInstalled)
+        {
+            // 未安装 → 安装
+            var installResult = await ServiceManager.InstallAsync();
+            if (!installResult.Success)
+            {
+                Logger.LogWarning("Service 安装失败: {Message}", installResult.Message);
+                return;
+            }
+        }
+        else
+        {
+            // 已安装 → 检查路径是否一致
+            var installedPath = ServiceManager.GetInstalledServiceExePath();
+            if (!string.IsNullOrEmpty(installedPath) &&
+                !string.Equals(installedPath, expectedPath, StringComparison.OrdinalIgnoreCase))
+            {
+                // 路径不一致（用户更新了解压目录），重新安装
+                Logger.LogInformation("Service 路径变更，重新安装: {Old} -> {New}", installedPath, expectedPath);
+                await ServiceManager.UninstallAsync();
+                var reinstallResult = await ServiceManager.InstallAsync();
+                if (!reinstallResult.Success)
+                {
+                    Logger.LogWarning("Service 重新安装失败: {Message}", reinstallResult.Message);
+                    return;
+                }
+            }
+        }
+
+        // 重新查询状态后启动（路径变更重新安装后状态可能已变化）
+        state = ServiceManager.GetServiceState();
+        if (state.IsInstalled && !state.IsRunning)
+        {
+            var startResult = await ServiceManager.StartAsync();
+            if (!startResult.Success)
+            {
+                Logger.LogWarning("Service 启动失败: {Message}", startResult.Message);
+            }
+        }
+    }
+
+    private static readonly ILogger Logger = LoggerFactory.Create(builder => { }).CreateLogger<App>();
 
     private static bool IsRunningAsAdmin()
     {
