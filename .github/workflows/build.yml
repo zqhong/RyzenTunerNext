@@ -9,6 +9,7 @@ env:
   DOTNET_VERSION: "8.0.x"
   BUILD_CONFIGURATION: "Release"
   BUILD_PLATFORM: "x64"
+  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
 
 jobs:
   build:
