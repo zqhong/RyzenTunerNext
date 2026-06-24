@@ -76,7 +76,7 @@
             <!-- 说明 -->
             <TextBlock Text="技术说明" Style="{StaticResource SubtitleTextBlockStyle}" />
             <TextBlock TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}">
-                RyzenTunerNext 是 RyzenAdj 的 Windows GUI 匍端，采用 Windows Service + WinUI 3 双进程架构。
+                RyzenTunerNext 是 RyzenAdj 的 Windows GUI 前端，采用 Windows Service + WinUI 3 双进程架构。
                 Service 以 SYSTEM 权限运行，确保 WinRing0 驱动加载稳定；GUI 以普通用户权限运行，提供可视化操作界面。
                 两者通过 Named Pipe 实时通信，SQLite (WAL) 共享配置和状态。
             </TextBlock>

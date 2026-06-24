@@ -31,11 +31,11 @@
                 <Button
                     Content="多核测试"
                     Command="{Binding RunMultiCoreTestCommand}"
-                    IsEnabled="{Binding IsRunning, Converter={StaticResource BoolInverseVisibility}}" />
+                    IsEnabled="{Binding IsRunning, Converter={StaticResource BoolInverse}}" />
                 <Button
                     Content="单核测试"
                     Command="{Binding RunSingleCoreTestCommand}"
-                    IsEnabled="{Binding IsRunning, Converter={StaticResource BoolInverseVisibility}}" />
+                    IsEnabled="{Binding IsRunning, Converter={StaticResource BoolInverse}}" />
                 <Button Content="加载历史" Command="{Binding LoadHistoryCommand}" />
                 <Button Content="清空历史" Command="{Binding ClearHistoryCommand}" />
             </StackPanel>

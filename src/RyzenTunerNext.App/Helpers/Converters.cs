@@ -17,6 +17,18 @@ public class BoolToVisibilityConverter : IValueConverter
 }
 
 /// <summary>
+/// bool → bool (true=false, false=true)
+/// </summary>
+public class BoolInverseConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, string language)
+        => value is not true;
+
+    public object ConvertBack(object value, Type targetType, object parameter, string language)
+        => value is not true;
+}
+
+/// <summary>
 /// bool → Visibility (true=Collapsed, false=Visible)
 /// </summary>
 public class BoolInverseVisibilityConverter : IValueConverter

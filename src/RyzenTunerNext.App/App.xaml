@@ -16,6 +16,7 @@
             <!-- 转换器 -->
             <helpers:BoolToVisibilityConverter x:Key="BoolToVisibility" />
             <helpers:BoolInverseVisibilityConverter x:Key="BoolInverseVisibility" />
+            <helpers:BoolInverseConverter x:Key="BoolInverse" />
             <helpers:StringToBoolConverter x:Key="StringToBool" />
             <helpers:StringToVisibilityConverter x:Key="StringToVisibility" />
             <helpers:LogLevelToGlyphConverter x:Key="LogLevelToGlyphConverter" />
