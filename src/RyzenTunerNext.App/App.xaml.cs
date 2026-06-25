@@ -65,11 +65,18 @@ public partial class App : Application
             StatusCache = new StatusCacheRepository(ConnectionString);
             RyzenAdj = new RyzenAdjWrapper();
 
+            await Logs.InfoAsync("App", "数据库初始化完成");
+
             // 3. 检查反作弊警告
             await ShowAntiCheatWarningIfNeededAsync();
 
-            // 4. 启动 PowerManager（后台功耗管理循环）
-            var loggerFactory = Microsoft.Extensions.Logging.LoggerFactory.Create(builder => { });
+            // 4. 构造 PowerManager（MainWindow 构造函数需要订阅其事件）
+            //    ILogger 日志通过 LogRepositoryLoggerProvider 写入 SQLite
+            var loggerFactory = Microsoft.Extensions.Logging.LoggerFactory.Create(builder =>
+            {
+                builder.AddProvider(new LogRepositoryLoggerProvider(Logs));
+                builder.SetMinimumLevel(LogLevel.Information);
+            });
             PowerManager = new PowerManager(
                 RyzenAdj,
                 Settings,
@@ -79,11 +86,27 @@ public partial class App : Application
                 new ModeScheduler(Settings, Logs, loggerFactory.CreateLogger<ModeScheduler>()),
                 new SystemEventMonitor(loggerFactory.CreateLogger<SystemEventMonitor>()),
                 loggerFactory.CreateLogger<PowerManager>());
-            await PowerManager.StartAsync(CancellationToken.None);
 
-            // 5. 创建主窗口
+            await Logs.InfoAsync("App", "PowerManager 已构造，开始后台初始化");
+
+            // 5. 创建主窗口（必须在 PowerManager 构造之后，因为 MainWindow 订阅其事件）
             MainWindow = new MainWindow();
             MainWindow.Activate();
+
+            // 6. 后台启动 PowerManager 主循环（fire-and-forget，不阻塞 UI）
+            //    内部的 InitializeRyzenAdjAsync 可能有重试（最多 10 次 × 30 秒），
+            //    不 await 以避免界面白屏
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await PowerManager.StartAsync(CancellationToken.None);
+                }
+                catch (Exception ex)
+                {
+                    await Logs.ErrorAsync("App", $"PowerManager 启动失败: {ex.Message}", ex.StackTrace);
+                }
+            });
         }
         catch (Exception ex)
         {
@@ -115,8 +138,6 @@ public partial class App : Application
         tempWindow.Close();
         Application.Current.Exit();
     }
-
-    private static readonly ILogger Logger = LoggerFactory.Create(builder => { }).CreateLogger<App>();
 
     private static bool IsRunningAsAdmin()
     {
