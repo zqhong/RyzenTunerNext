@@ -20,7 +20,8 @@ public static class NativeLibraryLoader
         if (_initialized) return;
         _initialized = true;
 
-        var nativeDir = Path.Combine(AppContext.BaseDirectory, "native");
+        var baseDir = Path.GetDirectoryName(Environment.ProcessPath) ?? AppContext.BaseDirectory;
+        var nativeDir = Path.Combine(baseDir, "native");
         if (!Directory.Exists(nativeDir)) return;
 
         // 1. 将 native/ 加入 Windows DLL 搜索路径

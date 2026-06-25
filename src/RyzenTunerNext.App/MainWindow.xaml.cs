@@ -94,7 +94,7 @@ public sealed partial class MainWindow : Window
         DiagnosticFileLogger.Write("[MainWindow] SetupTrayIcon 开始");
 
         // 设置图标（ICO 格式，BitmapImage 可直接加载；PNG 转 Icon 在 .NET 10 上有兼容性问题）
-        var iconPath = System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "app.ico");
+        var iconPath = System.IO.Path.Combine(AppEnvironment.ExeDirectory, "Assets", "app.ico");
         DiagnosticFileLogger.Write($"[MainWindow] 图标路径: {iconPath}, 存在: {System.IO.File.Exists(iconPath)}");
         if (System.IO.File.Exists(iconPath))
         {

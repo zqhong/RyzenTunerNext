@@ -61,6 +61,8 @@ public partial class App : Application
             return;
         }
 
+        DiagnosticFileLogger.Write($"ExeDirectory: {AppEnvironment.ExeDirectory}");
+        DiagnosticFileLogger.Write($"BaseDirectory: {AppContext.BaseDirectory}");
         DiagnosticFileLogger.Write("OnLaunched 开始");
 
         try
@@ -77,7 +79,7 @@ public partial class App : Application
 
             // 2. 初始化数据库
             DiagnosticFileLogger.Write("步骤 2: 初始化数据库");
-            var dbPath = Path.Combine(AppContext.BaseDirectory, "RyzenTunerNext.db");
+            var dbPath = Path.Combine(AppEnvironment.ExeDirectory, "RyzenTunerNext.db");
             ConnectionString = $"Data Source={dbPath}";
             DatabaseInitializer.Initialize(ConnectionString);
 

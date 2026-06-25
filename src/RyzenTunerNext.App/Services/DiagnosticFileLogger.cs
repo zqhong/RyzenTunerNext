@@ -7,7 +7,7 @@ namespace RyzenTunerNext.App.Services;
 internal static class DiagnosticFileLogger
 {
     private static readonly string LogPath = Path.Combine(
-        AppContext.BaseDirectory, "diagnostic.log");
+        AppEnvironment.ExeDirectory, "diagnostic.log");
 
     /// <summary>
     /// 同步写入一行日志。进程崩溃前也会刷盘。
