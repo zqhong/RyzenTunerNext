@@ -262,8 +262,9 @@ public partial class App : Application
     internal ContentDialog? _antiCheatDialog;
     internal bool _showAntiCheatDialog;
 
-    internal async Task ShowPendingDialogsAsync(XamlRoot xamlRoot)
+    internal async Task ShowPendingDialogsAsync(XamlRoot? xamlRoot)
     {
+        if (xamlRoot == null) return;
         if (_showAntiCheatDialog && _antiCheatDialog != null)
         {
             _antiCheatDialog.XamlRoot = xamlRoot;

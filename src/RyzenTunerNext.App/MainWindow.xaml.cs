@@ -389,18 +389,62 @@ public sealed partial class MainWindow : Window
             DiagnosticFileLogger.Write("[MainWindow] OnWindowActivated 首次激活");
             Activated -= OnWindowActivated;
 
-            if (Content is FrameworkElement root)
-            {
-                DiagnosticFileLogger.Write("[MainWindow] 显示待处理弹窗");
-                await ((App)Application.Current).ShowPendingDialogsAsync(root.XamlRoot);
-                DiagnosticFileLogger.Write("[MainWindow] 待处理弹窗完成");
-            }
+            // 等待 XamlRoot 就绪后显示待处理弹窗
+            // 窗口刚激活时 Content 可能还未完成布局，XamlRoot 可能为 null
+            await ShowPendingDialogsWhenReadyAsync();
 
             if (App.MainWindow == null)
             {
                 App.SetMainWindow(this);
             }
             DiagnosticFileLogger.Write("[MainWindow] OnWindowActivated 完成");
+        }
+    }
+
+    /// <summary>
+    /// 等待 XamlRoot 就绪后显示待处理弹窗。
+    /// 窗口首次激活时 Content 可能还未完成布局，XamlRoot 为 null。
+    /// </summary>
+    private async Task ShowPendingDialogsWhenReadyAsync()
+    {
+        if (Content is not FrameworkElement root) return;
+
+        // XamlRoot 已就绪，直接显示
+        if (root.XamlRoot != null)
+        {
+            DiagnosticFileLogger.Write("[MainWindow] 显示待处理弹窗");
+            try
+            {
+                await ((App)Application.Current).ShowPendingDialogsAsync(root.XamlRoot);
+            }
+            catch (Exception ex)
+            {
+                DiagnosticFileLogger.Write($"[MainWindow] 显示待处理弹窗失败: {ex.Message}");
+            }
+            return;
+        }
+
+        // XamlRoot 尚未就绪，等待 Loaded 事件
+        DiagnosticFileLogger.Write("[MainWindow] XamlRoot 未就绪，等待 Loaded 事件");
+        var tcs = new TaskCompletionSource();
+        root.Loaded += (_, _) => tcs.TrySetResult();
+        await tcs.Task;
+
+        if (root.XamlRoot != null)
+        {
+            DiagnosticFileLogger.Write("[MainWindow] 显示待处理弹窗（延迟）");
+            try
+            {
+                await ((App)Application.Current).ShowPendingDialogsAsync(root.XamlRoot);
+            }
+            catch (Exception ex)
+            {
+                DiagnosticFileLogger.Write($"[MainWindow] 显示待处理弹窗失败: {ex.Message}");
+            }
+        }
+        else
+        {
+            DiagnosticFileLogger.Write("[MainWindow] XamlRoot 仍为 null，跳过弹窗显示");
         }
     }
 

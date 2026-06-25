@@ -20,9 +20,8 @@ public static class NativeLibraryLoader
         if (_initialized) return;
         _initialized = true;
 
-        var baseDir = Path.GetDirectoryName(Environment.ProcessPath) ?? AppContext.BaseDirectory;
-        var nativeDir = Path.Combine(baseDir, "native");
-        if (!Directory.Exists(nativeDir)) return;
+        var nativeDir = FindNativeDirectory();
+        if (nativeDir == null) return;
 
         // 1. 将 native/ 加入 Windows DLL 搜索路径
         //    libryzenadj.dll 依赖 WinRing0x64.dll，后者通过 Windows 默认搜索加载
@@ -30,8 +29,10 @@ public static class NativeLibraryLoader
         SetDllDirectory(nativeDir);
 
         // 2. 注册 .NET 原生库解析器，将 libryzenadj.dll 重定向到 native/
+        //    使用 typeof().Assembly 比 Assembly.GetExecutingAssembly() 更可靠
+        //    （后者在某些 JIT 内联场景下可能返回错误的程序集）
         NativeLibrary.SetDllImportResolver(
-            Assembly.GetExecutingAssembly(),
+            typeof(NativeLibraryLoader).Assembly,
             (libraryName, assembly, searchPath) =>
             {
                 if (libraryName == "libryzenadj.dll")
@@ -43,6 +44,34 @@ public static class NativeLibraryLoader
 
                 return IntPtr.Zero;
             });
+    }
+
+    /// <summary>
+    /// 查找 native/ 子目录。
+    /// PublishSingleFile 模式下 Content 文件被解压到 AppContext.BaseDirectory（临时目录），
+    /// 非 SingleFile 模式下文件在 exe 同级目录。两个位置都检查。
+    /// </summary>
+    private static string? FindNativeDirectory()
+    {
+        // 1. exe 同级目录的 native/ 子目录（非 SingleFile 模式）
+        var exeDir = Path.GetDirectoryName(Environment.ProcessPath);
+        if (exeDir != null)
+        {
+            var candidate = Path.Combine(exeDir, "native");
+            if (Directory.Exists(candidate))
+                return candidate;
+        }
+
+        // 2. PublishSingleFile 解压目录的 native/ 子目录
+        var baseDir = AppContext.BaseDirectory;
+        if (!string.IsNullOrEmpty(baseDir))
+        {
+            var candidate = Path.Combine(baseDir, "native");
+            if (Directory.Exists(candidate))
+                return candidate;
+        }
+
+        return null;
     }
 
     [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
