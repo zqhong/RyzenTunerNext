@@ -15,30 +15,6 @@
 
             <TextBlock Text="设置" Style="{StaticResource TitleTextBlockStyle}" />
 
-            <!-- ==================== Service 管理 ==================== -->
-            <TextBlock Text="Service 管理" Style="{StaticResource SubtitleTextBlockStyle}" />
-            <StackPanel Spacing="12">
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                    <FontIcon
-                        FontFamily="Segoe Fluent Icons"
-                        FontSize="16"
-                        Glyph="{Binding ServiceRunning, Converter={StaticResource BoolToGlyphConverter}}" />
-                    <TextBlock Text="{Binding ServiceStatusText, Mode=OneWay}" VerticalAlignment="Center" />
-                </StackPanel>
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                    <Button Content="安装" Command="{Binding InstallServiceCommand}"
-                            Visibility="{Binding ServiceInstalled, Converter={StaticResource BoolInverseVisibility}}" />
-                    <Button Content="卸载" Command="{Binding UninstallServiceCommand}"
-                            Visibility="{Binding ServiceInstalled, Converter={StaticResource BoolToVisibility}}" />
-                    <Button Content="启动" Command="{Binding StartServiceCommand}"
-                            Visibility="{Binding ServiceRunning, Converter={StaticResource BoolInverseVisibility}}"
-                            Style="{StaticResource AccentButtonStyle}" />
-                    <Button Content="停止" Command="{Binding StopServiceCommand}"
-                            Visibility="{Binding ServiceRunning, Converter={StaticResource BoolToVisibility}}" />
-                    <Button Content="刷新状态" Command="{Binding RefreshServiceStatusCommand}" />
-                </StackPanel>
-            </StackPanel>
-
             <!-- ==================== 性能模式参数 ==================== -->
             <TextBlock Text="性能模式" Style="{StaticResource SubtitleTextBlockStyle}" />
             <StackPanel Spacing="12">

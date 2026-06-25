@@ -1,8 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.UI.Xaml;
-using RyzenTunerNext.App.Helpers;
-using RyzenTunerNext.Core.Messaging;
 
 namespace RyzenTunerNext.App.ViewModels;
 
@@ -16,11 +14,6 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty] public partial int TctlTemp { get; set; } = 90;
     [ObservableProperty] public partial int ApplyInterval { get; set; } = 4000;
     [ObservableProperty] public partial int LogRetentionDays { get; set; } = 30;
-
-    // ===== Service 管理 =====
-    [ObservableProperty] public partial bool ServiceInstalled { get; set; }
-    [ObservableProperty] public partial bool ServiceRunning { get; set; }
-    [ObservableProperty] public partial string ServiceStatusText { get; set; } = "检测中...";
 
     // ===== 主题和语言 =====
     [ObservableProperty] public partial int SelectedThemeIndex { get; set; }  // 0=跟随系统, 1=亮色, 2=暗色
@@ -46,9 +39,6 @@ public partial class SettingsViewModel : ObservableObject
         TctlTemp = await App.Settings.GetTctlTempAsync();
         ApplyInterval = await App.Settings.GetApplyIntervalAsync();
         LogRetentionDays = await App.Settings.GetLogRetentionDaysAsync();
-
-        // Service 状态
-        RefreshServiceStatus();
 
         // 主题和语言
         var theme = await App.Settings.GetAsync("theme") ?? "system";
@@ -90,62 +80,7 @@ public partial class SettingsViewModel : ObservableObject
     private async Task SaveSettingAsync(string key, string value)
     {
         await App.Settings.SetAsync(key, value);
-        await App.PipeClient.SendAsync(new UpdateConfigMessage { Key = key, Value = value });
-    }
-
-    // ===== Service 管理命令 =====
-
-    [RelayCommand]
-    private void RefreshServiceStatus()
-    {
-        var state = ServiceManager.GetServiceState();
-        ServiceInstalled = state.IsInstalled;
-        ServiceRunning = state.IsRunning;
-        ServiceStatusText = state.StatusText;
-    }
-
-    [RelayCommand]
-    private async Task InstallServiceAsync()
-    {
-        var (success, message) = await ServiceManager.InstallAsync();
-        RefreshServiceStatus();
-        if (!success)
-        {
-            await ShowErrorDialogAsync(message);
-        }
-    }
-
-    [RelayCommand]
-    private async Task UninstallServiceAsync()
-    {
-        var (success, message) = await ServiceManager.UninstallAsync();
-        RefreshServiceStatus();
-        if (!success)
-        {
-            await ShowErrorDialogAsync(message);
-        }
-    }
-
-    [RelayCommand]
-    private async Task StartServiceAsync()
-    {
-        var (success, message) = await ServiceManager.StartAsync();
-        RefreshServiceStatus();
-        if (!success)
-        {
-            await ShowErrorDialogAsync(message);
-        }
-    }
-
-    [RelayCommand]
-    private async Task StopServiceAsync()
-    {
-        var (success, message) = await ServiceManager.StopAsync();
-        RefreshServiceStatus();
-        if (!success)
-        {
-            await ShowErrorDialogAsync(message);
-        }
+        App.PowerManager.UpdateConfig(key, value);
     }
 
     // ===== 主题切换 =====

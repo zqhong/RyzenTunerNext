@@ -42,14 +42,15 @@ public partial class HomeViewModel : ObservableObject
     private async Task SwitchModeAsync(string mode)
     {
         CurrentMode = mode;
-        await App.PipeClient.SendAsync(new SetModeMessage { Mode = mode });
+        App.PowerManager.SetMode(mode);
         await App.Settings.SetAsync("energy_mode", mode);
     }
 
     [RelayCommand]
-    private async Task ApplyNowAsync()
+    private Task ApplyNowAsync()
     {
-        await App.PipeClient.SendAsync(new ApplyNowMessage());
+        App.PowerManager.ApplyNow();
+        return Task.CompletedTask;
     }
 
     public void UpdateFromStatus(StatusUpdateMessage msg)

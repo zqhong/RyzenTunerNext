@@ -1,73 +1,146 @@
 using System.Text.Json;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using RyzenTunerNext.Core.Data;
 using RyzenTunerNext.Core.Messaging;
 using RyzenTunerNext.Core.Models;
 using RyzenTunerNext.Core.Services;
 
-namespace RyzenTunerNext.Service;
+namespace RyzenTunerNext.App.Services;
 
 /// <summary>
-/// BackgroundService 主循环：协调各模块完成参数下发。
+/// 后台功耗管理器。
+/// 替代原 Service 进程中的 Worker + PipeServer，在 App 进程内直接运行。
 /// </summary>
-public class Worker : BackgroundService
+public class PowerManager
 {
     private readonly RyzenAdjWrapper _ryzenAdj;
     private readonly SettingsRepository _settings;
     private readonly LogRepository _logs;
     private readonly StatusCacheRepository _statusCache;
-    private readonly PipeServer _pipeServer;
-    private readonly SystemEventMonitor _eventMonitor;
-    private readonly ModeScheduler _modeScheduler;
     private readonly ParameterApplier _parameterApplier;
-    private readonly ILogger<Worker> _logger;
+    private readonly ModeScheduler _modeScheduler;
+    private readonly SystemEventMonitor _eventMonitor;
+    private readonly ILogger<PowerManager> _logger;
 
     private bool _immediateApply;
+    private CancellationTokenSource? _cts;
+    private Task? _mainLoopTask;
 
-    public Worker(
+    /// <summary>状态更新事件（替代 PipeClient 的 StatusUpdateMessage）</summary>
+    public event EventHandler<StatusUpdateMessage>? StatusUpdated;
+
+    /// <summary>Service 状态变更事件（替代 PipeClient 的 ServiceStateMessage）</summary>
+    public event EventHandler<ServiceStateMessage>? StateChanged;
+
+    public PowerManager(
         RyzenAdjWrapper ryzenAdj,
         SettingsRepository settings,
         LogRepository logs,
         StatusCacheRepository statusCache,
-        PipeServer pipeServer,
-        SystemEventMonitor eventMonitor,
-        ModeScheduler modeScheduler,
         ParameterApplier parameterApplier,
-        ILogger<Worker> logger)
+        ModeScheduler modeScheduler,
+        SystemEventMonitor eventMonitor,
+        ILogger<PowerManager> logger)
     {
         _ryzenAdj = ryzenAdj;
         _settings = settings;
         _logs = logs;
         _statusCache = statusCache;
-        _pipeServer = pipeServer;
-        _eventMonitor = eventMonitor;
-        _modeScheduler = modeScheduler;
         _parameterApplier = parameterApplier;
+        _modeScheduler = modeScheduler;
+        _eventMonitor = eventMonitor;
         _logger = logger;
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    /// <summary>
+    /// 启动后台功耗管理循环。
+    /// </summary>
+    public async Task StartAsync(CancellationToken ct)
     {
-        // 1. 启动 Named Pipe Server（尽早启动，让 GUI 可以立即连接）
-        _pipeServer.MessageReceived += OnGuiMessage;
-        _pipeServer.Start(stoppingToken);
+        _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
-        // 2. 注册系统事件
+        // 1. 注册系统事件
         _eventMonitor.WakeUp += OnWakeUp;
         _eventMonitor.PowerSourceChanged += OnPowerSourceChanged;
 
-        // 3. 发送 Service 状态（GUI 连接后立即可见）
-        await BroadcastServiceStateAsync(stoppingToken);
+        // 2. 发送初始状态
+        BroadcastServiceState();
 
-        // 4. 初始化 RyzenAdj（可能耗时较长，但 PipeServer 已就绪，GUI 不会卡在"未连接"）
-        await InitializeRyzenAdjAsync(stoppingToken);
+        // 3. 初始化 RyzenAdj（可能耗时较长）
+        await InitializeRyzenAdjAsync(_cts.Token);
 
-        // 5. 启动日志清理后台任务
-        _ = RunLogCleanupLoopAsync(stoppingToken);
+        // 4. 启动日志清理后台任务
+        _ = RunLogCleanupLoopAsync(_cts.Token);
 
-        // 6. 主循环
-        while (!stoppingToken.IsCancellationRequested)
+        // 5. 启动主循环
+        _mainLoopTask = Task.Run(() => MainLoopAsync(_cts.Token), _cts.Token);
+    }
+
+    /// <summary>
+    /// 停止后台循环并清理资源。
+    /// </summary>
+    public async Task StopAsync()
+    {
+        _logger.LogInformation("PowerManager 正在停止...");
+
+        _cts?.Cancel();
+
+        if (_mainLoopTask != null)
+        {
+            try
+            {
+                await _mainLoopTask;
+            }
+            catch (OperationCanceledException)
+            {
+                // 正常取消
+            }
+        }
+
+        _eventMonitor.WakeUp -= OnWakeUp;
+        _eventMonitor.PowerSourceChanged -= OnPowerSourceChanged;
+        _eventMonitor.Dispose();
+        _ryzenAdj.Dispose();
+    }
+
+    #region 公开方法（替代 PipeClient.SendAsync）
+
+    /// <summary>
+    /// 切换能耗模式。
+    /// </summary>
+    public void SetMode(string mode)
+    {
+        _ = _settings.SetAsync("energy_mode", mode);
+        _modeScheduler.Reset();
+        _immediateApply = true;
+        _logger.LogInformation("模式切换: {Mode}", mode);
+    }
+
+    /// <summary>
+    /// 立即应用当前参数。
+    /// </summary>
+    public void ApplyNow()
+    {
+        _immediateApply = true;
+    }
+
+    /// <summary>
+    /// 更新配置项。
+    /// </summary>
+    public void UpdateConfig(string key, string value)
+    {
+        _ = _settings.SetAsync(key, value);
+        _immediateApply = true;
+        _logger.LogInformation("配置更新: {Key} = {Value}", key, value);
+    }
+
+    #endregion
+
+    #region 主循环
+
+    private async Task MainLoopAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
         {
             try
             {
@@ -98,15 +171,15 @@ public class Worker : BackgroundService
                 // 下发参数并验证
                 var result = await _parameterApplier.ApplyAndVerifyAsync(profile);
 
-                // 推送状态到 GUI
-                await BroadcastStatusAsync(profile, result, stoppingToken);
+                // 推送状态
+                await BroadcastStatusAsync(profile, result);
 
                 // 等待间隔，但每 100ms 检查一次 immediateApply
                 var interval = await _settings.GetApplyIntervalAsync();
                 var elapsed = 0;
                 _immediateApply = false;
 
-                while (elapsed < interval && !stoppingToken.IsCancellationRequested)
+                while (elapsed < interval && !ct.IsCancellationRequested)
                 {
                     if (_immediateApply)
                     {
@@ -114,7 +187,7 @@ public class Worker : BackgroundService
                         _immediateApply = false;
                         break;
                     }
-                    await Task.Delay(100, stoppingToken);
+                    await Task.Delay(100, ct);
                     elapsed += 100;
                 }
             }
@@ -126,10 +199,14 @@ public class Worker : BackgroundService
             {
                 _logger.LogError(ex, "主循环异常");
                 await _logs.ErrorAsync("Service", $"参数下发异常: {ex.Message}");
-                await Task.Delay(5000, stoppingToken);
+                await Task.Delay(5000, ct);
             }
         }
     }
+
+    #endregion
+
+    #region 初始化
 
     private async Task InitializeRyzenAdjAsync(CancellationToken ct)
     {
@@ -152,6 +229,10 @@ public class Worker : BackgroundService
         await _logs.ErrorAsync("Service", "RyzenAdj 初始化失败，已达最大重试次数");
     }
 
+    #endregion
+
+    #region 事件处理
+
     private void OnWakeUp(object? sender, EventArgs e)
     {
         _immediateApply = true;
@@ -164,32 +245,11 @@ public class Worker : BackgroundService
         _immediateApply = true;
     }
 
-    private void OnGuiMessage(object? sender, PipeMessage message)
-    {
-        switch (message)
-        {
-            case SetModeMessage setMode:
-                _ = _settings.SetAsync("energy_mode", setMode.Mode);
-                _modeScheduler.Reset();
-                _logger.LogInformation("模式切换: {Mode}", setMode.Mode);
-                break;
+    #endregion
 
-            case ApplyNowMessage:
-                _immediateApply = true;
-                break;
+    #region 状态广播
 
-            case UpdateConfigMessage update:
-                _ = _settings.SetAsync(update.Key, update.Value);
-                _logger.LogInformation("配置更新: {Key} = {Value}", update.Key, update.Value);
-                break;
-
-            case RequestStatusMessage:
-                _immediateApply = true;
-                break;
-        }
-    }
-
-    private async Task BroadcastStatusAsync(PowerProfile profile, ApplyResult result, CancellationToken ct)
+    private async Task BroadcastStatusAsync(PowerProfile profile, ApplyResult result)
     {
         if (result.Actual == null) return;
 
@@ -215,8 +275,8 @@ public class Worker : BackgroundService
             }
         };
 
-        // 通过 Named Pipe 推送给 GUI
-        await _pipeServer.BroadcastAsync(message, ct);
+        // 触发事件通知 UI
+        StatusUpdated?.Invoke(this, message);
 
         // 更新 SQLite 状态缓存（GUI 重启后可恢复状态显示）
         try
@@ -230,7 +290,7 @@ public class Worker : BackgroundService
         }
     }
 
-    private async Task BroadcastServiceStateAsync(CancellationToken ct)
+    private void BroadcastServiceState()
     {
         var message = new ServiceStateMessage
         {
@@ -239,8 +299,12 @@ public class Worker : BackgroundService
             CpuFamily = _ryzenAdj.IsInitialized ? _ryzenAdj.GetCpuFamily().ToString() : "Unknown"
         };
 
-        await _pipeServer.BroadcastAsync(message, ct);
+        StateChanged?.Invoke(this, message);
     }
+
+    #endregion
+
+    #region 日志清理
 
     /// <summary>
     /// 日志自动清理：每 6 小时执行一次，按配置的保留天数清理过期日志。
@@ -265,12 +329,5 @@ public class Worker : BackgroundService
         }
     }
 
-    public override async Task StopAsync(CancellationToken cancellationToken)
-    {
-        _logger.LogInformation("Service 正在停止...");
-        await _pipeServer.StopAsync();
-        _ryzenAdj.Dispose();
-        _eventMonitor.Dispose();
-        await base.StopAsync(cancellationToken);
-    }
+    #endregion
 }

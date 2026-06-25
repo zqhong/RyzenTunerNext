@@ -64,9 +64,9 @@ public sealed partial class MainWindow : Window
         // 恢复窗口位置
         _ = RestoreWindowPositionAsync();
 
-        // 注册 PipeClient 事件（用于更新托盘菜单）
-        App.PipeClient.MessageReceived += OnPipeMessageReceived;
-        App.PipeClient.ConnectionChanged += OnPipeConnectionChanged;
+        // 注册 PowerManager 事件（用于更新托盘菜单）
+        App.PowerManager.StatusUpdated += OnStatusUpdated;
+        App.PowerManager.StateChanged += OnStateChanged;
 
         // 初始化空闲检测定时器
         SetupIdleCheckTimer();
@@ -99,55 +99,48 @@ public sealed partial class MainWindow : Window
         _trayHelper.RestoreRequested += (_, _) => _trayHelper.RestoreFromTray();
         _trayHelper.ModeChangeRequested += async (_, mode) =>
         {
-            await App.PipeClient.SendAsync(new SetModeMessage { Mode = mode });
+            App.PowerManager.SetMode(mode);
             await App.Settings.SetAsync("energy_mode", mode);
         };
         _trayHelper.ExitRequested += (_, _) => Close();
 
-        // 初始状态
-        _trayHelper.UpdateServiceStatus(App.PipeClient.IsConnected);
+        // 初始状态（单进程模式下始终为运行中）
+        _trayHelper.UpdateServiceStatus(true);
     }
 
-    private void OnPipeMessageReceived(object? sender, PipeMessage message)
+    private void OnStatusUpdated(object? sender, StatusUpdateMessage statusMsg)
     {
         DispatcherQueue.TryEnqueue(() =>
         {
-            if (message is StatusUpdateMessage statusMsg)
+            _trayHelper.UpdateFromStatus(statusMsg);
+
+            var previousMode = _currentMode;
+            _currentMode = statusMsg.Mode;
+
+            if (statusMsg.ActualLimits != null)
             {
-                _trayHelper.UpdateFromStatus(statusMsg);
-
-                var previousMode = _currentMode;
-                _currentMode = statusMsg.Mode;
-
-                if (statusMsg.ActualLimits != null)
-                {
-                    _currentPower = statusMsg.ActualLimits.SocketPower / 1000.0;
-                    _currentTemp = statusMsg.ActualLimits.CpuTemp;
-                }
-                UpdateTrayTooltip();
-
-                // 自动恢复窗口：模式从省电切回性能时（用户变为活跃）
-                if (_trayHelper.IsMinimizedToTray
-                    && previousMode == "PowerSaving"
-                    && _currentMode == "Performance")
-                {
-                    _trayHelper.RestoreFromTray();
-                }
-
-                _previousMode = previousMode;
+                _currentPower = statusMsg.ActualLimits.SocketPower / 1000.0;
+                _currentTemp = statusMsg.ActualLimits.CpuTemp;
             }
-            else if (message is ServiceStateMessage stateMsg)
+            UpdateTrayTooltip();
+
+            // 自动恢复窗口：模式从省电切回性能时（用户变为活跃）
+            if (_trayHelper.IsMinimizedToTray
+                && previousMode == "PowerSaving"
+                && _currentMode == "Performance")
             {
-                _trayHelper.UpdateServiceStatus(stateMsg.IsRunning);
+                _trayHelper.RestoreFromTray();
             }
+
+            _previousMode = previousMode;
         });
     }
 
-    private void OnPipeConnectionChanged(object? sender, bool connected)
+    private void OnStateChanged(object? sender, ServiceStateMessage stateMsg)
     {
         DispatcherQueue.TryEnqueue(() =>
         {
-            _trayHelper.UpdateServiceStatus(connected);
+            _trayHelper.UpdateServiceStatus(stateMsg.IsRunning);
         });
     }
 
@@ -163,9 +156,10 @@ public sealed partial class MainWindow : Window
     private void Cleanup()
     {
         _idleCheckTimer?.Stop();
-        App.PipeClient.MessageReceived -= OnPipeMessageReceived;
-        App.PipeClient.ConnectionChanged -= OnPipeConnectionChanged;
+        App.PowerManager.StatusUpdated -= OnStatusUpdated;
+        App.PowerManager.StateChanged -= OnStateChanged;
         TrayIcon.Dispose();
+        _ = App.PowerManager.StopAsync();
     }
 
     #endregion

@@ -76,21 +76,21 @@
                         FontFamily="Segoe Fluent Icons"
                         FontSize="16"
                         Foreground="{ThemeResource SystemAccentColor}"
-                        Glyph="{Binding ServiceRunning, Converter={StaticResource BoolToGlyphConverter}}" />
-                    <TextBlock Text="Windows Service" />
+                        Glyph="{Binding PowerManagerRunning, Converter={StaticResource BoolToGlyphConverter}}" />
+                    <TextBlock Text="Power Manager" />
                 </StackPanel>
             </StackPanel>
 
             <!-- 说明 -->
             <TextBlock Text="技术说明" Style="{StaticResource SubtitleTextBlockStyle}" />
             <TextBlock TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}">
-                RyzenTunerNext 是 RyzenAdj 的 Windows GUI 前端，采用 Windows Service + WinUI 3 双进程架构。
-                Service 以 SYSTEM 权限运行，确保 WinRing0 驱动加载稳定；GUI 以普通用户权限运行，提供可视化操作界面。
-                两者通过 Named Pipe 实时通信，SQLite (WAL) 共享配置和状态。
+                RyzenTunerNext 是 RyzenAdj 的 Windows GUI 前端，采用单进程架构。
+                以管理员权限运行，Power Manager 在后台持续管理功耗参数，WinUI 3 提供可视化操作界面。
+                配置和状态通过 SQLite (WAL) 持久化。
             </TextBlock>
 
             <TextBlock TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}">
-                注意：RyzenAdj 的设置重启后不保留，电源模式切换也会重置参数。Service 会持续循环写入以维持设置。
+                注意：RyzenAdj 的设置重启后不保留，电源模式切换也会重置参数。Power Manager 会持续循环写入以维持设置。
             </TextBlock>
 
         </StackPanel>

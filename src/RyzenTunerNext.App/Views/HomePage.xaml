@@ -14,15 +14,6 @@
     <ScrollViewer Padding="32,24,32,32">
         <StackPanel Spacing="24" MaxWidth="800">
 
-            <!-- 连接状态 -->
-            <InfoBar
-                x:Name="ConnectionBar"
-                IsOpen="True"
-                Severity="Warning"
-                Title="未连接到 Service"
-                Message="请确认 RyzenTunerNext Service 已安装并启动。"
-                Visibility="{Binding IsConnected, Converter={StaticResource BoolInverseVisibility}}" />
-
             <!-- Cap 警告 -->
             <InfoBar
                 x:Name="CapWarningBar"

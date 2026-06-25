@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging;
 using RyzenTunerNext.Core.Data;
 using RyzenTunerNext.Core.Models;
 
-namespace RyzenTunerNext.Service;
+namespace RyzenTunerNext.App.Services;
 
 /// <summary>
 /// 自动模式状态机。

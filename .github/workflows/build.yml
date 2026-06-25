@@ -79,16 +79,6 @@ jobs:
             --verbosity minimal
         shell: pwsh
 
-      # 发布 Service
-      - name: Publish Service
-        run: |
-          dotnet publish src/RyzenTunerNext.Service/RyzenTunerNext.Service.csproj `
-            -c ${{ env.BUILD_CONFIGURATION }} `
-            -p:Platform=${{ env.BUILD_PLATFORM }} `
-            -o publish/service `
-            --verbosity minimal
-        shell: pwsh
-
       # 清理不需要的文件
       - name: Cleanup Publish Output
         run: |
@@ -122,51 +112,7 @@ jobs:
           }
 
           Write-Host ""
-          Write-Host "=== 清理 Service 产物 ==="
-
-          # 移除 Service 中的 locale 目录
-          Get-ChildItem publish\service -Directory | Where-Object {
-            $_.Name -match '^[a-z]{2,3}(-[A-Za-z]+){1,2}$'
-          } | ForEach-Object {
-            Write-Host "  移除 locale: $($_.Name)"
-            Remove-Item $_.FullName -Recurse -Force
-          }
-
-          # 移除 Service 中的 createdump.exe 和 .pdb
-          Get-ChildItem publish\service -Filter "createdump.exe" | ForEach-Object {
-            Write-Host "  移除 $($_.Name)"
-            Remove-Item $_.FullName -Force
-          }
-          Get-ChildItem publish\service -Filter "*.pdb" | ForEach-Object {
-            Write-Host "  移除 $($_.Name)"
-            Remove-Item $_.FullName -Force
-          }
-
-          Write-Host ""
           Write-Host "=== 清理完成 ==="
-        shell: pwsh
-
-      # 合并 Service 到 App 目录的 Service/ 子目录
-      - name: Package Artifacts
-        run: |
-          Write-Host "=== 合并 Service 到 App 目录 ==="
-          New-Item -ItemType Directory -Path "publish\app\Service" -Force | Out-Null
-          Copy-Item -Path "publish\service\*" -Destination "publish\app\Service\" -Recurse -Force
-
-          Write-Host ""
-          Write-Host "=== 根目录内容 ==="
-          Get-ChildItem publish\app -Name | ForEach-Object { Write-Host "  $_" }
-          Write-Host ""
-          Write-Host "=== Service/ 子目录内容 ==="
-          Get-ChildItem publish\app\Service -Name | ForEach-Object { Write-Host "  $_" }
-
-          Write-Host ""
-          $rootFiles = (Get-ChildItem publish\app -File | Measure-Object).Count
-          $rootDirs = (Get-ChildItem publish\app -Directory | Measure-Object).Count
-          $svcFiles = (Get-ChildItem publish\app\Service -File | Measure-Object).Count
-          Write-Host "=== 统计 ==="
-          Write-Host "  根目录: ${rootFiles} 文件, ${rootDirs} 目录"
-          Write-Host "  Service/: ${svcFiles} 文件"
         shell: pwsh
 
       # 输出构建摘要
@@ -182,14 +128,9 @@ jobs:
           | 目标框架 | net10.0-windows10.0.22621.0 |
           | 运行器 | windows-latest |
 
-          ### 根目录内容
+          ### 产物内容
           ``````text
-          $(Get-ChildItem publish\app -Name | Select-Object -First 20 | Out-String)
-          ``````
-
-          ### Service/ 子目录内容
-          ``````text
-          $(Get-ChildItem publish\app\Service -Name | Select-Object -First 20 | Out-String)
+          $(Get-ChildItem publish\app -Name | Select-Object -First 30 | Out-String)
           ``````
           "@
 

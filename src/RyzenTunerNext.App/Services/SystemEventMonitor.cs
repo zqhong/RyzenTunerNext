@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Win32;
 
-namespace RyzenTunerNext.Service;
+namespace RyzenTunerNext.App.Services;
 
 /// <summary>
 /// 系统事件监听：电源切换、系统唤醒。

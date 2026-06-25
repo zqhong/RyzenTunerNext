@@ -45,7 +45,7 @@ internal class TrayIconHelper
         // 只读状态项
         _serviceStatusText = new TextBlock
         {
-            Text = "Service 状态: 检测中...",
+            Text = "Power Manager: 启动中...",
             FontSize = 12,
             Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"]
         };
@@ -168,7 +168,7 @@ internal class TrayIconHelper
     public void UpdateServiceStatus(bool connected)
     {
         if (_serviceStatusText != null)
-            _serviceStatusText.Text = connected ? "Service 状态: 运行中" : "Service 状态: 未连接";
+            _serviceStatusText.Text = connected ? "Power Manager: 运行中" : "Power Manager: 未运行";
     }
 
     /// <summary>

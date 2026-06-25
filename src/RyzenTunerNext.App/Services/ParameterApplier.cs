@@ -3,7 +3,7 @@ using RyzenTunerNext.Core.Data;
 using RyzenTunerNext.Core.Models;
 using RyzenTunerNext.Core.Services;
 
-namespace RyzenTunerNext.Service;
+namespace RyzenTunerNext.App.Services;
 
 /// <summary>
 /// 参数下发 + 验证模块

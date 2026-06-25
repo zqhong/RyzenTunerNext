@@ -19,9 +19,8 @@ public sealed partial class HomePage : Page
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
-        App.PipeClient.MessageReceived += OnMessageReceived;
-        App.PipeClient.ConnectionChanged += OnConnectionChanged;
-        ViewModel.IsConnected = App.PipeClient.IsConnected;
+        App.PowerManager.StatusUpdated += OnStatusUpdated;
+        ViewModel.IsConnected = true; // 单进程模式下始终连接
 
         // 加载当前模式
         _ = LoadCurrentModeAsync();
@@ -32,8 +31,7 @@ public sealed partial class HomePage : Page
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
-        App.PipeClient.MessageReceived -= OnMessageReceived;
-        App.PipeClient.ConnectionChanged -= OnConnectionChanged;
+        App.PowerManager.StatusUpdated -= OnStatusUpdated;
     }
 
     private async Task LoadCurrentModeAsync()
@@ -49,23 +47,12 @@ public sealed partial class HomePage : Page
         };
     }
 
-    private void OnConnectionChanged(object? sender, bool connected)
+    private void OnStatusUpdated(object? sender, StatusUpdateMessage statusMsg)
     {
         DispatcherQueue.TryEnqueue(() =>
         {
-            ViewModel.IsConnected = connected;
+            ViewModel.UpdateFromStatus(statusMsg);
         });
-    }
-
-    private void OnMessageReceived(object? sender, PipeMessage message)
-    {
-        if (message is StatusUpdateMessage statusMsg)
-        {
-            DispatcherQueue.TryEnqueue(() =>
-            {
-                ViewModel.UpdateFromStatus(statusMsg);
-            });
-        }
     }
 
     private void ModeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
