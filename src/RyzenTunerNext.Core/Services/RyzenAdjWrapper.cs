@@ -73,7 +73,7 @@ public sealed class RyzenAdjWrapper : IDisposable
         if (nativeDir == null)
             return "native/ 目录不存在";
 
-        var files = new[] { "libryzenadj.dll", "WinRing0x64.dll", "WinRing0x64.sys" };
+        var files = new[] { "libryzenadj.dll", "WinRing0x64.dll", "WinRing0x64.sys", "inpoutx64.dll" };
         var missing = files.Where(f => !File.Exists(Path.Combine(nativeDir, f))).ToArray();
         if (missing.Length > 0)
             return $"native/ 目录缺少文件: {string.Join(", ", missing)}（路径: {nativeDir}）";
