@@ -141,13 +141,10 @@ public partial class App : Application
         }
         else
         {
-            // 已安装 → 检查路径是否一致
-            var installedPath = ServiceManager.GetInstalledServiceExePath();
-            if (!string.IsNullOrEmpty(installedPath) &&
-                !string.Equals(installedPath, expectedPath, StringComparison.OrdinalIgnoreCase))
+            // 已安装 → 检查是否需要重新安装（路径变更或缺少 --db-path 参数）
+            if (ServiceManager.NeedsReinstall(out var reason))
             {
-                // 路径不一致（用户更新了解压目录），重新安装
-                Logger.LogInformation("Service 路径变更，重新安装: {Old} -> {New}", installedPath, expectedPath);
+                Logger.LogInformation("Service 需要重新安装: {Reason}", reason);
                 await ServiceManager.UninstallAsync();
                 var reinstallResult = await ServiceManager.InstallAsync();
                 if (!reinstallResult.Success)

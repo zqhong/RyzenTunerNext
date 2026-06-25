@@ -49,19 +49,19 @@ public class Worker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        // 1. 初始化 RyzenAdj
-        await InitializeRyzenAdjAsync(stoppingToken);
-
-        // 2. 启动 Named Pipe Server
+        // 1. 启动 Named Pipe Server（尽早启动，让 GUI 可以立即连接）
         _pipeServer.MessageReceived += OnGuiMessage;
         _pipeServer.Start(stoppingToken);
 
-        // 3. 注册系统事件
+        // 2. 注册系统事件
         _eventMonitor.WakeUp += OnWakeUp;
         _eventMonitor.PowerSourceChanged += OnPowerSourceChanged;
 
-        // 4. 发送 Service 状态
+        // 3. 发送 Service 状态（GUI 连接后立即可见）
         await BroadcastServiceStateAsync(stoppingToken);
+
+        // 4. 初始化 RyzenAdj（可能耗时较长，但 PipeServer 已就绪，GUI 不会卡在"未连接"）
+        await InitializeRyzenAdjAsync(stoppingToken);
 
         // 5. 启动日志清理后台任务
         _ = RunLogCleanupLoopAsync(stoppingToken);
