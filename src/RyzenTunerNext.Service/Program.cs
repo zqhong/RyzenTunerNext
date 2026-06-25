@@ -12,7 +12,7 @@ var builder = Host.CreateDefaultBuilder(args)
     {
         // 数据库
         var dbPath = Path.Combine(AppContext.BaseDirectory, "RyzenTunerNext.db");
-        var connectionString = $"Data Source={dbPath};Version=3;Journal Mode=WAL;";
+        var connectionString = $"Data Source={dbPath}";
         DatabaseInitializer.Initialize(connectionString);
 
         // 注册服务

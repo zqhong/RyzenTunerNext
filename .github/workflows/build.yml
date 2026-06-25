@@ -96,16 +96,6 @@ jobs:
           New-Item -ItemType Directory -Path "publish\app\Service" -Force | Out-Null
           Copy-Item -Path "publish\service\*" -Destination "publish\app\Service\" -Recurse -Force
 
-          Write-Host "=== 压缩 ==="
-          Compress-Archive -Path "publish\app\*" -DestinationPath "RyzenTunerNext.zip" -Force
-
-          Write-Host ""
-          Write-Host "=== 构建产物 ==="
-          Get-ChildItem *.zip | ForEach-Object {
-            $sizeMB = [math]::Round($_.Length / 1MB, 2)
-            Write-Host "$($_.Name) - ${sizeMB} MB"
-          }
-
           Write-Host ""
           Write-Host "=== 根目录内容 ==="
           Get-ChildItem publish\app -Name | Select-Object -First 30 | ForEach-Object { Write-Host "  $_" }
@@ -127,9 +117,6 @@ jobs:
           | 目标框架 | net10.0-windows10.0.22621.0 |
           | 运行器 | windows-latest |
 
-          ### 构建产物
-          - RyzenTunerNext.zip
-
           ### 根目录内容
           ``````text
           $(Get-ChildItem publish\app -Name | Select-Object -First 20 | Out-String)
@@ -149,7 +136,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: RyzenTunerNext
-          path: RyzenTunerNext.zip
+          path: publish/app/
           retention-days: 30
 
       # 失败时输出详细日志
