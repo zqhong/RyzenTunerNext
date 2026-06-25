@@ -227,7 +227,7 @@ public class PowerManager
         }
 
         _logger.LogCritical("RyzenAdj 初始化失败，已达最大重试次数");
-        await _logs.ErrorAsync("Service", "RyzenAdj 初始化失败，已达最大重试次数");
+        await _logs.ErrorAsync("Service", "RyzenAdj 初始化失败，已达最大重试次数。最后一次错误详情已写入日志");
     }
 
     #endregion

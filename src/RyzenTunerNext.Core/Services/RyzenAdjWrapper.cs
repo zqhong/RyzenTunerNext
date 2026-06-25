@@ -1,4 +1,6 @@
 using System.Runtime.InteropServices;
+using System.Runtime.Intrinsics.X86;
+using System.Text;
 using RyzenTunerNext.Core.Models;
 
 namespace RyzenTunerNext.Core.Services;
@@ -17,6 +19,10 @@ public sealed class RyzenAdjWrapper : IDisposable
     public bool IsInitialized => _handle != IntPtr.Zero;
     public bool IsTableInitialized => _tableInitialized;
 
+    // =====================================================================
+    //  Initialize — 含精确诊断的重试流程
+    // =====================================================================
+
     /// <summary>
     /// 初始化 RyzenAdj 和 PM Table。
     /// 需要管理员/ SYSTEM 权限。
@@ -30,29 +36,69 @@ public sealed class RyzenAdjWrapper : IDisposable
 
             try
             {
-                // 诊断：检查 native 文件是否就绪
+                // ===== 第 1 步：前置检查 =====
+
+                // 确保 DLL 搜索路径包含 native/ 子目录
+                var nativeDir = FindNativeDirectory();
+                if (nativeDir != null)
+                    NativeLibraryLoader.AddDllSearchPath(nativeDir);
+
+                // 1a) DLL 文件存在
                 var diag = RunDiagnostics();
                 if (diag != null)
                     return (false, $"前置检查失败: {diag}");
 
+                // 1b) CPU 兼容性检测（无需管理员权限即可执行）
+                var cpuInfo = GetCpuInfo();
+                if (!cpuInfo.Supported)
+                {
+                    return (false, $"CPU 不被 RyzenAdj v0.19.0 支持。CPU: {cpuInfo.Name}(Family=0x{cpuInfo.Family:X}, Model=0x{cpuInfo.Model:X})。需要更新 libryzenadj.dll 以支持该 CPU");
+                }
+
+                // 1c) WinRing0 OLS 初始化状态
+                var olsStatus = CheckOlsStatus();
+                if (!olsStatus.Contains("已就绪"))
+                {
+                    return (false, $"WinRing0 OLS 初始化失败: {olsStatus}");
+                }
+
+                // ===== 第 2 步：调用 init_ryzenadj =====
                 _handle = RyzenAdjNative.init_ryzenadj();
                 if (_handle == IntPtr.Zero)
                 {
-                    // init_ryzenadj 失败，可能是 WinRing0 驱动加载问题
-                    // 先尝试检查并安装 WinRing0 驱动
                     if (!CheckWinRing0Device().Contains("已就绪"))
                     {
                         EnsureWinRing0DriverRunning();
-                        // 等待一下驱动加载
                         Thread.Sleep(500);
                     }
 
-                    // 尝试显式加载 WinRing0x64.dll 后重试
-                    var retryDiag = TryExplicitLoadAndRetry();
+                    // 接管 stderr 以捕获 libryzenadj 的诊断输出
+                    (_handle, var stderrOutput) = CaptureStderr(() => RyzenAdjNative.init_ryzenadj());
+
                     if (_handle == IntPtr.Zero)
-                        return (false, $"init_ryzenadj 返回空句柄。{retryDiag}");
+                    {
+                        var lines = stderrOutput.Trim();
+                        var sb = new StringBuilder();
+                        sb.Append("init_ryzenadj 返回空句柄。");
+                        if (lines.Length > 0)
+                            sb.Append($"libryzenadj 诊断: {lines}。");
+                        sb.Append($"CPU: {cpuInfo.Name}(F={cpuInfo.Family:X} M={cpuInfo.Model:X})。");
+                        sb.Append(olsStatus);
+                        sb.Append(CheckWinRing0Device());
+
+                        // 根据 stderr 输出给出引导
+                        if (lines.Contains("PCI Bus is not writeable"))
+                            sb.Append("PCI 配置空间不可写，请检查：Secure Boot/VBS/Hyper-V 是否开启？");
+                        else if (lines.Contains("Unable to get os_access"))
+                            sb.Append("WinRing0 初始化失败，请以管理员权限运行。");
+                        else if (lines.Contains("Unable to get") || lines.Contains("Failed to get SMU"))
+                            sb.Append("SMU 检测失败，可能原因：不支持的 CPU 型号或 BIOS 限制。");
+
+                        return (false, sb.ToString());
+                    }
                 }
 
+                // ===== 第 3 步：init_table =====
                 int tableResult = RyzenAdjNative.init_table(_handle);
                 _tableInitialized = tableResult == 0;
                 if (tableResult != 0)
@@ -75,6 +121,187 @@ public sealed class RyzenAdjWrapper : IDisposable
         }
     }
 
+    // =====================================================================
+    //  CPUID 检测
+    // =====================================================================
+
+    /// <summary>
+    /// CPU 检测结果
+    /// </summary>
+    public sealed record CpuInfo(
+        string Vendor, int Family, int Model, string Name, bool Supported);
+
+    /// <summary>
+    /// 通过 CPUID 指令读取 CPU 信息（无需管理员权限）。
+    /// </summary>
+    private static CpuInfo GetCpuInfo()
+    {
+        const string expectedVendor = "AuthenticAMD";
+
+        if (!X86Base.IsSupported)
+            return new CpuInfo("X86Base 不可用", 0, 0, "未知", false);
+
+        // CPUID 叶 0：获取厂商字符串 — EBX[0:3] + EDX[4:7] + ECX[8:11]
+        var eax0 = X86Base.CpuId(0, 0);
+        var vendor = string.Concat(
+            (char)(eax0.Ebx & 0xFF), (char)((eax0.Ebx >> 8) & 0xFF),
+            (char)((eax0.Ebx >> 16) & 0xFF), (char)((eax0.Ebx >> 24) & 0xFF),
+            (char)(eax0.Edx & 0xFF), (char)((eax0.Edx >> 8) & 0xFF),
+            (char)((eax0.Edx >> 16) & 0xFF), (char)((eax0.Edx >> 24) & 0xFF),
+            (char)(eax0.Ecx & 0xFF), (char)((eax0.Ecx >> 8) & 0xFF),
+            (char)((eax0.Ecx >> 16) & 0xFF), (char)((eax0.Ecx >> 24) & 0xFF));
+
+        // CPUID 叶 1：解析 Family / Model
+        var eax1 = X86Base.CpuId(1, 0);
+        int family = ((eax1.Eax >> 8) & 0xF) + ((eax1.Eax >> 20) & 0xFF);
+        int model = ((eax1.Eax >> 4) & 0xF) | ((eax1.Eax >> 12) & 0xF0);
+
+        var vendorClean = vendor.TrimEnd('\0');
+        bool isAmd = vendorClean == expectedVendor;
+        bool supported = isAmd && IsCpuFamilySupported(family, model);
+
+        return new CpuInfo(vendorClean, family, model,
+            $"AMD Family 0x{family:X} Model 0x{model:X}", supported);
+    }
+
+    /// <summary>
+    /// 判断给定 Family/Model 是否在 RyzenAdj v0.19.0 的支持列表中。
+    /// </summary>
+    private static bool IsCpuFamilySupported(int family, int model)
+    {
+        // 匹配 RyzenAdj v0.19.0 lib/cpuid.c 的 cpuid_load_family() 逻辑
+        switch (family)
+        {
+            case 0x17: // Zen / Zen+ / Zen2
+                return model switch
+                {
+                    17 => true,     // Raven
+                    24 => true,     // Picasso
+                    32 => true,     // Dali
+                    96 => true,     // Renoir
+                    104 => true,    // Lucienne
+                    144 or 145 => true, // Vangogh
+                    160 => true,    // Mendocino
+                    _ => false,
+                };
+            case 0x19: // Zen3 / Zen4
+                return model switch
+                {
+                    80 => true,     // Cezanne
+                    64 or 68 => true,   // Rembrandt
+                    97 => true,     // DragonRange
+                    116 or 120 => true, // Phoenix
+                    117 => true,    // HawkPoint
+                    _ => false,
+                };
+            case 0x1A: // Zen5 / Zen6
+                return model switch
+                {
+                    32 or 36 => true,   // StrixPoint
+                    68 => true,         // FireRange
+                    96 => true,         // KrackanPoint
+                    112 => true,        // StrixHalo
+                    _ => false,
+                };
+            default:
+                return false;
+        }
+    }
+
+    // =====================================================================
+    //  WinRing0 OLS 状态诊断
+    // =====================================================================
+
+    /// <summary>
+    /// OLS_DLL 状态码，定义见 WinRing0 OlsDef.h
+    /// </summary>
+    private static string DescribeOlsStatus(uint code)
+    {
+        return code switch
+        {
+            0 => "已就绪",
+            1 => "不支持的平台",
+            2 => "驱动未加载",
+            3 => "驱动未找到",
+            4 => "驱动已卸载",
+            5 => "网络环境驱动未加载",
+            _ => $"未知错误(code={code})",
+        };
+    }
+
+    /// <summary>
+    /// 直接调用 WinRing0x64.dll 的 InitializeOls/GetDllStatus 检查 OLS 初始化状态。
+    /// </summary>
+    private static string CheckOlsStatus()
+    {
+        if (!InitializeOls())
+        {
+            var code = GetDllStatus();
+            return $"OLS 初始化失败(code={code}): {DescribeOlsStatus(code)}";
+        }
+
+        // 再次确认状态
+        var finalCode = GetDllStatus();
+        return $"OLS 已就绪(code={finalCode})";
+    }
+
+    // =====================================================================
+    //  stderr 截获
+    // =====================================================================
+
+    private const int StdErrorHandle = -12;
+
+    /// <summary>
+    /// 执行 action 期间重定向 CRT stderr 到匿名管道并读取输出。
+    /// 返回 (action 返回值, stderr 捕获内容)。
+    /// 适用于截获 libryzenadj 的 fprintf(stderr, ...) 诊断消息。
+    /// 原理：UCRT _write(fd=2) 每次会调用 GetStdHandle(STD_ERROR_HANDLE)，
+    /// 因此提前 SetStdHandle 即可生效。
+    /// </summary>
+    private static (IntPtr Result, string Stderr) CaptureStderr(Func<IntPtr> action)
+    {
+        IntPtr hRead = IntPtr.Zero, hWrite = IntPtr.Zero;
+        var oldStderr = GetStdHandle(StdErrorHandle);
+
+        try
+        {
+            // 创建匿名管道（SECURITY_ATTRIBUTES = null → 句柄不可继承）
+            if (!CreatePipe(out hRead, out hWrite, IntPtr.Zero, 0))
+                return (action(), "(无法创建管道)");
+
+            SetStdHandle(StdErrorHandle, hWrite);
+
+            var result = action();
+
+            // 立即恢复 stderr 并关闭写端，让 ReadFile 读到 EOF
+            SetStdHandle(StdErrorHandle, oldStderr);
+            oldStderr = IntPtr.Zero; // 防止 finally 重复恢复
+
+            CloseHandle(hWrite);
+            hWrite = IntPtr.Zero;
+
+            // 读取管道中的全部数据
+            var sb = new StringBuilder();
+            var buf = new byte[4096];
+            while (ReadFile(hRead, buf, buf.Length, out var read, IntPtr.Zero) && read > 0)
+                sb.Append(Encoding.UTF8.GetString(buf, 0, read));
+
+            return (result, sb.ToString());
+        }
+        finally
+        {
+            // 兜底清理：异常路径或提前返回时确保句柄和 stderr 一致
+            if (oldStderr != IntPtr.Zero)
+                SetStdHandle(StdErrorHandle, oldStderr);
+            if (hWrite != IntPtr.Zero) CloseHandle(hWrite);
+            if (hRead != IntPtr.Zero) CloseHandle(hRead);
+        }
+    }
+
+    // =====================================================================
+    //  现存诊断方法
+    // =====================================================================
+
     /// <summary>
     /// 检查 native 目录下的文件是否就绪。返回 null 表示通过，否则返回诊断信息。
     /// </summary>
@@ -93,64 +320,7 @@ public sealed class RyzenAdjWrapper : IDisposable
     }
 
     /// <summary>
-    /// 尝试显式加载各 DLL 并重试 init_ryzenadj。
-    /// 返回诊断信息字符串。
-    /// </summary>
-    private string TryExplicitLoadAndRetry()
-    {
-        var nativeDir = FindNativeDirectory();
-        if (nativeDir == null)
-            return "native/ 目录不存在，无法重试";
-
-        var details = new System.Text.StringBuilder();
-
-        // 1. 逐个测试 DLL 可加载性
-        foreach (var dllName in new[] { "libryzenadj.dll", "WinRing0x64.dll", "inpoutx64.dll" })
-        {
-            var dllPath = Path.Combine(nativeDir, dllName);
-            bool loaded = NativeLibrary.TryLoad(dllPath, out _);
-            details.Append($"{dllName}: {(loaded ? "OK" : "FAIL")}；");
-        }
-
-        // 2. 检查 WinRing0 驱动设备是否就绪
-        var deviceStatus = CheckWinRing0Device();
-        details.Append(deviceStatus);
-
-        if (deviceStatus.Contains("失败"))
-        {
-            // 3. 尝试安装并启动 WinRing0 内核驱动
-            details.Append("尝试安装驱动...；");
-            bool installed = EnsureWinRing0DriverRunning();
-            details.Append($"驱动安装: {(installed ? "成功" : "失败")}；");
-
-            if (installed)
-            {
-                // 重新检查设备
-                var retryStatus = CheckWinRing0Device();
-                details.Append($"安装后检查: {retryStatus}；");
-            }
-        }
-
-        // 4. 再次设置 DLL 搜索路径确保正确
-        NativeLibraryLoader.AddDllSearchPath(nativeDir);
-
-        // 5. 重试 init_ryzenadj
-        _handle = RyzenAdjNative.init_ryzenadj();
-        if (_handle != IntPtr.Zero)
-        {
-            details.Append("；重试 init_ryzenadj 成功");
-        }
-        else
-        {
-            details.Append("；重试 init_ryzenadj 仍返回 NULL");
-        }
-
-        return details.ToString();
-    }
-
-    /// <summary>
     /// 尝试打开 WinRing0 设备句柄来判断驱动是否已加载。
-    /// WinRing0 驱动加载后会创建 \\.\WinRing0_1_2_0 设备。
     /// </summary>
     private static string CheckWinRing0Device()
     {
@@ -160,16 +330,268 @@ public sealed class RyzenAdjWrapper : IDisposable
         if (handle == INVALID_HANDLE_VALUE)
         {
             var err = Marshal.GetLastWin32Error();
-            // 2 = ERROR_FILE_NOT_FOUND（驱动未加载）
-            // 5 = ERROR_ACCESS_DENIED（权限不足）
-            // 32 = ERROR_SHARING_VIOLATION（驱动已被其他进程独占打开）
             return $"WinRing0 设备打开失败(lastErr={err})；";
         }
         CloseHandle(handle);
         return "WinRing0 设备已就绪；";
     }
 
-    #region Device P/Invoke
+    // =====================================================================
+    //  驱动安装／SCM
+    // =====================================================================
+
+    /// <summary>
+    /// 确保 WinRing0 内核驱动已安装并运行。
+    /// </summary>
+    private static bool EnsureWinRing0DriverRunning()
+    {
+        const string serviceName = "WinRing0_1_2_0";
+        const string displayName = "WinRing0 Low Level Access Driver";
+
+        var nativeDir = FindNativeDirectory();
+        if (nativeDir == null) return false;
+
+        var sysPath = Path.Combine(nativeDir, "WinRing0x64.sys");
+        if (!File.Exists(sysPath)) return false;
+
+        var scm = OpenSCManager(null, null, SC_MANAGER_ALL_ACCESS);
+        if (scm == IntPtr.Zero) return false;
+
+        try
+        {
+            var service = OpenService(scm, serviceName, SERVICE_ALL_ACCESS);
+            try
+            {
+                if (service == IntPtr.Zero)
+                {
+                    var lastErr = Marshal.GetLastWin32Error();
+                    if (lastErr == 1060)
+                    {
+                        service = CreateService(
+                            scm, serviceName, displayName,
+                            SERVICE_ALL_ACCESS, SERVICE_KERNEL_DRIVER,
+                            SERVICE_DEMAND_START, SERVICE_ERROR_NORMAL,
+                            sysPath, null, IntPtr.Zero, null, null, null);
+                    }
+                }
+
+                if (service == IntPtr.Zero) return false;
+
+                if (QueryServiceStatus(service, out var status))
+                {
+                    if (status.dwCurrentState == SERVICE_RUNNING)
+                        return true;
+                    if (status.dwCurrentState == SERVICE_START_PENDING)
+                        return WaitForServiceStart(service, 5000);
+                }
+
+                if (!StartService(service, 0, null)) return false;
+                return WaitForServiceStart(service, 5000);
+            }
+            finally
+            {
+                if (service != IntPtr.Zero) CloseServiceHandle(service);
+            }
+        }
+        finally
+        {
+            CloseServiceHandle(scm);
+        }
+    }
+
+    private static bool WaitForServiceStart(IntPtr service, int timeoutMs)
+    {
+        var deadline = Environment.TickCount + timeoutMs;
+        while (Environment.TickCount < deadline)
+        {
+            Thread.Sleep(200);
+            if (QueryServiceStatus(service, out var status))
+            {
+                if (status.dwCurrentState == SERVICE_RUNNING) return true;
+                if (status.dwCurrentState == SERVICE_STOPPED) return false;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// 查找 native/ 子目录（与 NativeLibraryLoader 逻辑一致）。
+    /// </summary>
+    private static string? FindNativeDirectory()
+    {
+        var exeDir = Path.GetDirectoryName(Environment.ProcessPath);
+        if (exeDir != null)
+        {
+            var candidate = Path.Combine(exeDir, "native");
+            if (Directory.Exists(candidate)) return candidate;
+        }
+
+        var baseDir = AppContext.BaseDirectory;
+        if (!string.IsNullOrEmpty(baseDir))
+        {
+            var candidate = Path.Combine(baseDir, "native");
+            if (Directory.Exists(candidate)) return candidate;
+        }
+
+        return null;
+    }
+
+    // =====================================================================
+    //  RyzenAdj 功能调用
+    // =====================================================================
+
+    public int GetCpuFamily()
+    {
+        lock (_lock)
+        {
+            if (_disposed || _handle == IntPtr.Zero) return -1;
+            return RyzenAdjNative.get_cpu_family(_handle);
+        }
+    }
+
+    public ApplyResult ApplyProfile(PowerProfile profile)
+    {
+        lock (_lock)
+        {
+            if (_disposed || _handle == IntPtr.Zero)
+                return ApplyResult.Failed("RyzenAdj 未初始化");
+
+            int modeErr;
+            if (profile.Mode == EnergyMode.PowerSaving)
+                modeErr = RyzenAdjNative.set_power_saving(_handle);
+            else
+                modeErr = RyzenAdjNative.set_max_performance(_handle);
+
+            if (modeErr != 0)
+                return ApplyResult.Failed($"set_power_saving/set_max_performance 失败: {modeErr}");
+
+            int err;
+            err = RyzenAdjNative.set_fast_limit(_handle, (uint)profile.FastLimit);
+            if (err != 0) return ApplyResult.Failed($"set_fast_limit 失败: {err}");
+
+            err = RyzenAdjNative.set_slow_limit(_handle, (uint)profile.SlowLimit);
+            if (err != 0) return ApplyResult.Failed($"set_slow_limit 失败: {err}");
+
+            err = RyzenAdjNative.set_stapm_limit(_handle, (uint)profile.SlowLimit);
+            if (err != 0) return ApplyResult.Failed($"set_stapm_limit 失败: {err}");
+
+            err = RyzenAdjNative.set_tctl_temp(_handle, (uint)profile.TctlTemp);
+            if (err != 0) return ApplyResult.Failed($"set_tctl_temp 失败: {err}");
+
+            var actual = ReadActualValues();
+            return ApplyResult.SuccessResult(actual);
+        }
+    }
+
+    public ActualValues ReadActualValues()
+    {
+        lock (_lock)
+        {
+            if (!_tableInitialized || _handle == IntPtr.Zero)
+                return ActualValues.Empty;
+
+            RyzenAdjNative.refresh_table(_handle);
+
+            return new ActualValues
+            {
+                FastLimit = RyzenAdjNative.get_fast_limit(_handle),
+                FastValue = RyzenAdjNative.get_fast_value(_handle),
+                SlowLimit = RyzenAdjNative.get_slow_limit(_handle),
+                SlowValue = RyzenAdjNative.get_slow_value(_handle),
+                StapmLimit = RyzenAdjNative.get_stapm_limit(_handle),
+                StapmValue = RyzenAdjNative.get_stapm_value(_handle),
+                TctlTemp = RyzenAdjNative.get_tctl_temp(_handle),
+                TctlTempValue = RyzenAdjNative.get_tctl_temp_value(_handle),
+                SocketPower = RyzenAdjNative.get_socket_power(_handle),
+            };
+        }
+    }
+
+    public CpuMetrics ReadCpuMetrics(uint coreCount = 16)
+    {
+        lock (_lock)
+        {
+            if (!_tableInitialized || _handle == IntPtr.Zero)
+                return new CpuMetrics();
+
+            RyzenAdjNative.refresh_table(_handle);
+
+            float totalFreq = 0;
+            float maxTemp = 0;
+            int validCores = 0;
+
+            for (uint i = 0; i < coreCount; i++)
+            {
+                float clk = RyzenAdjNative.get_core_clk(_handle, i);
+                float temp = RyzenAdjNative.get_core_temp(_handle, i);
+                if (clk > 0)
+                {
+                    totalFreq += clk;
+                    validCores++;
+                }
+                if (temp > maxTemp) maxTemp = temp;
+            }
+
+            return new CpuMetrics
+            {
+                AvgFrequency = validCores > 0 ? totalFreq / validCores : 0,
+                SocketPower = RyzenAdjNative.get_socket_power(_handle),
+                CpuTemp = maxTemp > 0 ? maxTemp : RyzenAdjNative.get_tctl_temp_value(_handle),
+            };
+        }
+    }
+
+    public void Dispose()
+    {
+        lock (_lock)
+        {
+            if (!_disposed && _handle != IntPtr.Zero)
+            {
+                RyzenAdjNative.cleanup_ryzenadj(_handle);
+                _handle = IntPtr.Zero;
+                _tableInitialized = false;
+            }
+            _disposed = true;
+        }
+    }
+
+    // =====================================================================
+    //  P/Invoke 声明区
+    // =====================================================================
+
+    #region WinRing0 OLS
+
+    // WinRing0x64.dll 使用 WINAPI (__stdcall) 调用约定
+    [DllImport("WinRing0x64.dll", CallingConvention = CallingConvention.Winapi)]
+    private static extern bool InitializeOls();
+
+    [DllImport("WinRing0x64.dll", CallingConvention = CallingConvention.Winapi)]
+    private static extern uint GetDllStatus();
+
+    #endregion
+
+    #region stderr 管道
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool CreatePipe(out IntPtr hReadPipe, out IntPtr hWritePipe,
+        IntPtr lpPipeAttributes, int nSize);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr GetStdHandle(int nStdHandle);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool SetStdHandle(int nStdHandle, IntPtr hHandle);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool ReadFile(IntPtr hFile, byte[] lpBuffer,
+        int nNumberOfBytesToRead, out int lpNumberOfBytesRead, IntPtr lpOverlapped);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool CloseHandle(IntPtr hObject);
+
+    #endregion
+
+    #region WinRing0 设备
 
     private const uint OPEN_EXISTING = 3;
     private const uint FILE_SHARE_READ = 1;
@@ -177,17 +599,13 @@ public sealed class RyzenAdjWrapper : IDisposable
     private static readonly IntPtr INVALID_HANDLE_VALUE = new(-1);
 
     [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-    private static extern IntPtr CreateFile(
-        string lpFileName, uint dwDesiredAccess, uint dwShareMode,
-        IntPtr lpSecurityAttributes, uint dwCreationDisposition,
+    private static extern IntPtr CreateFile(string lpFileName, uint dwDesiredAccess,
+        uint dwShareMode, IntPtr lpSecurityAttributes, uint dwCreationDisposition,
         uint dwFlagsAndAttributes, IntPtr hTemplateFile);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern bool CloseHandle(IntPtr hObject);
 
     #endregion
 
-    #region SCM P/Invoke (WinRing0 驱动安装/启动)
+    #region SCM (WinRing0 驱动安装)
 
     private const uint SC_MANAGER_ALL_ACCESS = 0xF003F;
     private const uint SERVICE_ALL_ACCESS = 0xF01FF;
@@ -242,251 +660,4 @@ public sealed class RyzenAdjWrapper : IDisposable
     }
 
     #endregion
-
-    /// <summary>
-    /// 确保 WinRing0 内核驱动已安装并运行。
-    /// WinRing0x64.sys 通过 SCM 注册为内核驱动服务并启动，
-    /// 驱动启动后会在 \\.\WinRing0_1_2_0 创建设备，供 WinRing0x64.dll 使用。
-    /// 需要在管理员权限下运行。
-    /// </summary>
-    private static bool EnsureWinRing0DriverRunning()
-    {
-        const string serviceName = "WinRing0_1_2_0";
-        const string displayName = "WinRing0 Low Level Access Driver";
-
-        var nativeDir = FindNativeDirectory();
-        if (nativeDir == null) return false;
-
-        var sysPath = Path.Combine(nativeDir, "WinRing0x64.sys");
-        if (!File.Exists(sysPath)) return false;
-
-        var scm = OpenSCManager(null, null, SC_MANAGER_ALL_ACCESS);
-        if (scm == IntPtr.Zero) return false;
-
-        try
-        {
-            // 尝试打开已有服务
-            var service = OpenService(scm, serviceName, SERVICE_ALL_ACCESS);
-            try
-            {
-                if (service == IntPtr.Zero)
-                {
-                    var lastErr = Marshal.GetLastWin32Error();
-                    // 1060 = ERROR_SERVICE_DOES_NOT_EXIST
-                    if (lastErr == 1060)
-                    {
-                        // 服务不存在，注册新的内核驱动服务
-                        service = CreateService(
-                            scm, serviceName, displayName,
-                            SERVICE_ALL_ACCESS, SERVICE_KERNEL_DRIVER,
-                            SERVICE_DEMAND_START, SERVICE_ERROR_NORMAL,
-                            sysPath, null, IntPtr.Zero, null, null, null
-                        );
-                    }
-                }
-
-                if (service == IntPtr.Zero) return false;
-
-                // 查询服务当前状态
-                if (QueryServiceStatus(service, out var status))
-                {
-                    if (status.dwCurrentState == SERVICE_RUNNING)
-                        return true;
-
-                    // 如果正在启动中，等待完成
-                    if (status.dwCurrentState == SERVICE_START_PENDING)
-                        return WaitForServiceStart(service, 5000);
-                }
-
-                // 启动服务
-                if (!StartService(service, 0, null)) return false;
-
-                // 等待驱动加载（最多 5 秒）
-                return WaitForServiceStart(service, 5000);
-            }
-            finally
-            {
-                if (service != IntPtr.Zero) CloseServiceHandle(service);
-            }
-        }
-        finally
-        {
-            CloseServiceHandle(scm);
-        }
-    }
-
-    /// <summary>
-    /// 等待服务达到运行状态，超时则返回 false。
-    /// </summary>
-    private static bool WaitForServiceStart(IntPtr service, int timeoutMs)
-    {
-        var deadline = Environment.TickCount + timeoutMs;
-        while (Environment.TickCount < deadline)
-        {
-            Thread.Sleep(200);
-            if (QueryServiceStatus(service, out var status))
-            {
-                if (status.dwCurrentState == SERVICE_RUNNING) return true;
-                if (status.dwCurrentState == SERVICE_STOPPED) return false;
-                // SERVICE_START_PENDING: 继续等待
-            }
-        }
-        return false;
-    }
-
-    /// <summary>
-    /// 查找 native/ 子目录（与 NativeLibraryLoader 逻辑一致）。
-    /// </summary>
-    private static string? FindNativeDirectory()
-    {
-        var exeDir = Path.GetDirectoryName(Environment.ProcessPath);
-        if (exeDir != null)
-        {
-            var candidate = Path.Combine(exeDir, "native");
-            if (Directory.Exists(candidate)) return candidate;
-        }
-
-        var baseDir = AppContext.BaseDirectory;
-        if (!string.IsNullOrEmpty(baseDir))
-        {
-            var candidate = Path.Combine(baseDir, "native");
-            if (Directory.Exists(candidate)) return candidate;
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// 获取 CPU 系列枚举值
-    /// </summary>
-    public int GetCpuFamily()
-    {
-        lock (_lock)
-        {
-            if (_disposed || _handle == IntPtr.Zero) return -1;
-            return RyzenAdjNative.get_cpu_family(_handle);
-        }
-    }
-
-    /// <summary>
-    /// 应用功耗模式并验证实际值。
-    /// 返回 (set 是否成功, PM Table 读回的实际值)。
-    /// </summary>
-    public ApplyResult ApplyProfile(PowerProfile profile)
-    {
-        lock (_lock)
-        {
-            if (_disposed || _handle == IntPtr.Zero)
-                return ApplyResult.Failed("RyzenAdj 未初始化");
-
-            // 1. 设置 power mode flag
-            int modeErr;
-            if (profile.Mode == EnergyMode.PowerSaving)
-                modeErr = RyzenAdjNative.set_power_saving(_handle);
-            else
-                modeErr = RyzenAdjNative.set_max_performance(_handle);
-
-            if (modeErr != 0)
-                return ApplyResult.Failed(
-                    $"set_power_saving/set_max_performance 失败: {modeErr}");
-
-            // 2. 设置核心参数
-            int err;
-            err = RyzenAdjNative.set_fast_limit(_handle, (uint)profile.FastLimit);
-            if (err != 0) return ApplyResult.Failed($"set_fast_limit 失败: {err}");
-
-            err = RyzenAdjNative.set_slow_limit(_handle, (uint)profile.SlowLimit);
-            if (err != 0) return ApplyResult.Failed($"set_slow_limit 失败: {err}");
-
-            // stapm-limit = slow-limit
-            err = RyzenAdjNative.set_stapm_limit(_handle, (uint)profile.SlowLimit);
-            if (err != 0) return ApplyResult.Failed($"set_stapm_limit 失败: {err}");
-
-            err = RyzenAdjNative.set_tctl_temp(_handle, (uint)profile.TctlTemp);
-            if (err != 0) return ApplyResult.Failed($"set_tctl_temp 失败: {err}");
-
-            // 3. 验证: 刷新 PM Table 读回实际值
-            var actual = ReadActualValues();
-            return ApplyResult.SuccessResult(actual);
-        }
-    }
-
-    /// <summary>
-    /// 读取 PM Table 中的实际生效值。
-    /// SMU 可能返回成功但值被 BIOS cap 截断，必须验证。
-    /// </summary>
-    public ActualValues ReadActualValues()
-    {
-        lock (_lock)
-        {
-            if (!_tableInitialized || _handle == IntPtr.Zero)
-                return ActualValues.Empty;
-
-            RyzenAdjNative.refresh_table(_handle);
-
-            return new ActualValues
-            {
-                FastLimit = RyzenAdjNative.get_fast_limit(_handle),
-                FastValue = RyzenAdjNative.get_fast_value(_handle),
-                SlowLimit = RyzenAdjNative.get_slow_limit(_handle),
-                SlowValue = RyzenAdjNative.get_slow_value(_handle),
-                StapmLimit = RyzenAdjNative.get_stapm_limit(_handle),
-                StapmValue = RyzenAdjNative.get_stapm_value(_handle),
-                TctlTemp = RyzenAdjNative.get_tctl_temp(_handle),
-                TctlTempValue = RyzenAdjNative.get_tctl_temp_value(_handle),
-                SocketPower = RyzenAdjNative.get_socket_power(_handle),
-            };
-        }
-    }
-
-    /// <summary>
-    /// 读取 CPU 实时指标
-    /// </summary>
-    public CpuMetrics ReadCpuMetrics(uint coreCount = 16)
-    {
-        lock (_lock)
-        {
-            if (!_tableInitialized || _handle == IntPtr.Zero)
-                return new CpuMetrics();
-
-            RyzenAdjNative.refresh_table(_handle);
-
-            float totalFreq = 0;
-            float maxTemp = 0;
-            int validCores = 0;
-
-            for (uint i = 0; i < coreCount; i++)
-            {
-                float clk = RyzenAdjNative.get_core_clk(_handle, i);
-                float temp = RyzenAdjNative.get_core_temp(_handle, i);
-                if (clk > 0)
-                {
-                    totalFreq += clk;
-                    validCores++;
-                }
-                if (temp > maxTemp) maxTemp = temp;
-            }
-
-            return new CpuMetrics
-            {
-                AvgFrequency = validCores > 0 ? totalFreq / validCores : 0,
-                SocketPower = RyzenAdjNative.get_socket_power(_handle),
-                CpuTemp = maxTemp > 0 ? maxTemp : RyzenAdjNative.get_tctl_temp_value(_handle),
-            };
-        }
-    }
-
-    public void Dispose()
-    {
-        lock (_lock)
-        {
-            if (!_disposed && _handle != IntPtr.Zero)
-            {
-                RyzenAdjNative.cleanup_ryzenadj(_handle);
-                _handle = IntPtr.Zero;
-                _tableInitialized = false;
-            }
-            _disposed = true;
-        }
-    }
 }
