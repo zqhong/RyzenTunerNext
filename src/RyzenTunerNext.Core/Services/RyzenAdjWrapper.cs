@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using RyzenTunerNext.Core.Models;
 
 namespace RyzenTunerNext.Core.Services;
@@ -29,9 +30,20 @@ public sealed class RyzenAdjWrapper : IDisposable
 
             try
             {
+                // 诊断：检查 native 文件是否就绪
+                var diag = RunDiagnostics();
+                if (diag != null)
+                    return (false, $"前置检查失败: {diag}");
+
                 _handle = RyzenAdjNative.init_ryzenadj();
                 if (_handle == IntPtr.Zero)
-                    return (false, "init_ryzenadj 返回空句柄（可能原因：权限不足、DLL 缺失、或 CPU 不受支持）");
+                {
+                    // init_ryzenadj 失败，可能是 WinRing0 驱动加载问题
+                    // 尝试显式加载 WinRing0x64.dll 后重试
+                    var retryDiag = TryExplicitLoadAndRetry();
+                    if (_handle == IntPtr.Zero)
+                        return (false, $"init_ryzenadj 返回空句柄。{retryDiag}");
+                }
 
                 int tableResult = RyzenAdjNative.init_table(_handle);
                 _tableInitialized = tableResult == 0;
@@ -50,6 +62,86 @@ public sealed class RyzenAdjWrapper : IDisposable
                 return (false, $"初始化异常: {ex}");
             }
         }
+    }
+
+    /// <summary>
+    /// 检查 native 目录下的文件是否就绪。返回 null 表示通过，否则返回诊断信息。
+    /// </summary>
+    private static string? RunDiagnostics()
+    {
+        var nativeDir = FindNativeDirectory();
+        if (nativeDir == null)
+            return "native/ 目录不存在";
+
+        var files = new[] { "libryzenadj.dll", "WinRing0x64.dll", "WinRing0x64.sys" };
+        var missing = files.Where(f => !File.Exists(Path.Combine(nativeDir, f))).ToArray();
+        if (missing.Length > 0)
+            return $"native/ 目录缺少文件: {string.Join(", ", missing)}（路径: {nativeDir}）";
+
+        return null;
+    }
+
+    /// <summary>
+    /// 尝试显式加载 WinRing0x64.dll 并重试 init_ryzenadj。
+    /// 返回诊断信息字符串。
+    /// </summary>
+    private string TryExplicitLoadAndRetry()
+    {
+        var nativeDir = FindNativeDirectory();
+        if (nativeDir == null)
+            return "native/ 目录不存在，无法重试";
+
+        var details = new System.Text.StringBuilder();
+
+        // 1. 显式加载 WinRing0x64.dll
+        var winringDllPath = Path.Combine(nativeDir, "WinRing0x64.dll");
+        bool winringLoaded = NativeLibrary.TryLoad(winringDllPath, out var winringHandle);
+        details.Append($"WinRing0x64.dll 加载: {(winringLoaded ? "成功" : "失败")}");
+
+        // 2. 再次调用 SetDllDirectory 确保搜索路径正确
+        SetDllDirectory(nativeDir);
+
+        // 3. 重试 init_ryzenadj
+        _handle = RyzenAdjNative.init_ryzenadj();
+        if (_handle != IntPtr.Zero)
+        {
+            details.Append("；重试 init_ryzenadj 成功");
+        }
+        else
+        {
+            details.Append("；重试 init_ryzenadj 仍返回 NULL");
+            // 检查驱动文件详情
+            var sysPath = Path.Combine(nativeDir, "WinRing0x64.sys");
+            if (File.Exists(sysPath))
+            {
+                var fi = new FileInfo(sysPath);
+                details.Append($"；WinRing0x64.sys 大小={fi.Length}B, 修改时间={fi.LastWriteTime}");
+            }
+        }
+
+        return details.ToString();
+    }
+
+    /// <summary>
+    /// 查找 native/ 子目录（与 NativeLibraryLoader 逻辑一致）。
+    /// </summary>
+    private static string? FindNativeDirectory()
+    {
+        var exeDir = Path.GetDirectoryName(Environment.ProcessPath);
+        if (exeDir != null)
+        {
+            var candidate = Path.Combine(exeDir, "native");
+            if (Directory.Exists(candidate)) return candidate;
+        }
+
+        var baseDir = AppContext.BaseDirectory;
+        if (!string.IsNullOrEmpty(baseDir))
+        {
+            var candidate = Path.Combine(baseDir, "native");
+            if (Directory.Exists(candidate)) return candidate;
+        }
+
+        return null;
     }
 
     /// <summary>
