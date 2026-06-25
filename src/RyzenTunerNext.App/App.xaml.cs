@@ -48,41 +48,73 @@ public partial class App : Application
             return;
         }
 
-        // 1. 检查管理员权限
-        if (!IsRunningAsAdmin())
+        try
         {
-            await ShowAdminRequiredDialogAsync();
-            return;
+            // 1. 检查管理员权限
+            if (!IsRunningAsAdmin())
+            {
+                await ShowAdminRequiredDialogAsync();
+                return;
+            }
+
+            // 2. 初始化数据库
+            var dbPath = Path.Combine(AppContext.BaseDirectory, "RyzenTunerNext.db");
+            ConnectionString = $"Data Source={dbPath}";
+            DatabaseInitializer.Initialize(ConnectionString);
+
+            Settings = new SettingsRepository(ConnectionString);
+            Logs = new LogRepository(ConnectionString);
+            ProfilerResults = new ProfilerResultRepository(ConnectionString);
+            StatusCache = new StatusCacheRepository(ConnectionString);
+            RyzenAdj = new RyzenAdjWrapper();
+
+            // 3. 检查反作弊警告
+            await ShowAntiCheatWarningIfNeededAsync();
+
+            // 4. 自动安装并启动 Service
+            await EnsureServiceInstalledAndRunningAsync();
+
+            // 5. 初始化 Pipe Client
+            var loggerFactory = Microsoft.Extensions.Logging.LoggerFactory.Create(builder => { });
+            PipeClient = new PipeClient(loggerFactory.CreateLogger<PipeClient>());
+
+            // 启动 Pipe Client 连接
+            _pipeClientCts = new CancellationTokenSource();
+            PipeClient.Start(_pipeClientCts.Token);
+
+            // 6. 创建主窗口
+            MainWindow = new MainWindow();
+            MainWindow.Activate();
         }
+        catch (Exception ex)
+        {
+            // 启动失败时展示错误窗口，避免进程静默运行但无界面
+            await ShowStartupErrorDialogAsync(ex);
+        }
+    }
 
-        // 2. 初始化数据库
-        var dbPath = Path.Combine(AppContext.BaseDirectory, "RyzenTunerNext.db");
-        ConnectionString = $"Data Source={dbPath}";
-        DatabaseInitializer.Initialize(ConnectionString);
+    private static async Task ShowStartupErrorDialogAsync(Exception ex)
+    {
+        var tempWindow = new Window();
+        var grid = new Grid();
+        tempWindow.Content = grid;
+        tempWindow.Title = "RyzenTunerNext - 启动失败";
+        tempWindow.Activate();
 
-        Settings = new SettingsRepository(ConnectionString);
-        Logs = new LogRepository(ConnectionString);
-        ProfilerResults = new ProfilerResultRepository(ConnectionString);
-        StatusCache = new StatusCacheRepository(ConnectionString);
-        RyzenAdj = new RyzenAdjWrapper();
+        await Task.Delay(100);
 
-        // 3. 检查反作弊警告
-        await ShowAntiCheatWarningIfNeededAsync();
+        var dialog = new ContentDialog
+        {
+            Title = "启动失败",
+            Content = $"RyzenTunerNext 启动过程中发生错误：\n\n{ex.Message}",
+            CloseButtonText = "退出",
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = grid.XamlRoot
+        };
 
-        // 4. 自动安装并启动 Service
-        await EnsureServiceInstalledAndRunningAsync();
-
-        // 5. 初始化 Pipe Client
-        var loggerFactory = Microsoft.Extensions.Logging.LoggerFactory.Create(builder => { });
-        PipeClient = new PipeClient(loggerFactory.CreateLogger<PipeClient>());
-
-        // 启动 Pipe Client 连接
-        _pipeClientCts = new CancellationTokenSource();
-        PipeClient.Start(_pipeClientCts.Token);
-
-        // 6. 创建主窗口
-        MainWindow = new MainWindow();
-        MainWindow.Activate();
+        await dialog.ShowAsync();
+        tempWindow.Close();
+        Application.Current.Exit();
     }
 
     private async Task EnsureServiceInstalledAndRunningAsync()
