@@ -47,6 +47,9 @@ public sealed class RyzenAdjWrapper : IDisposable
 
                 int tableResult = RyzenAdjNative.init_table(_handle);
                 _tableInitialized = tableResult == 0;
+                if (tableResult != 0)
+                    return (false, $"init_table 失败: {tableResult}");
+
                 return (true, null);
             }
             catch (DllNotFoundException ex)
@@ -128,12 +131,14 @@ public sealed class RyzenAdjWrapper : IDisposable
     private static string CheckWinRing0Device()
     {
         const string devicePath = @"\\.\WinRing0_1_2_0";
-        var handle = CreateFile(devicePath, 0, 0, IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
+        var handle = CreateFile(devicePath, 0, FILE_SHARE_READ | FILE_SHARE_WRITE,
+            IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
         if (handle == INVALID_HANDLE_VALUE)
         {
             var err = Marshal.GetLastWin32Error();
             // 2 = ERROR_FILE_NOT_FOUND（驱动未加载）
             // 5 = ERROR_ACCESS_DENIED（权限不足）
+            // 32 = ERROR_SHARING_VIOLATION（驱动已被其他进程独占打开）
             return $"WinRing0 设备打开失败(lastErr={err})；";
         }
         CloseHandle(handle);
@@ -143,6 +148,8 @@ public sealed class RyzenAdjWrapper : IDisposable
     #region Device P/Invoke
 
     private const uint OPEN_EXISTING = 3;
+    private const uint FILE_SHARE_READ = 1;
+    private const uint FILE_SHARE_WRITE = 2;
     private static readonly IntPtr INVALID_HANDLE_VALUE = new(-1);
 
     [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
@@ -202,10 +209,15 @@ public sealed class RyzenAdjWrapper : IDisposable
                 return ApplyResult.Failed("RyzenAdj 未初始化");
 
             // 1. 设置 power mode flag
+            int modeErr;
             if (profile.Mode == EnergyMode.PowerSaving)
-                RyzenAdjNative.set_power_saving(_handle);
+                modeErr = RyzenAdjNative.set_power_saving(_handle);
             else
-                RyzenAdjNative.set_max_performance(_handle);
+                modeErr = RyzenAdjNative.set_max_performance(_handle);
+
+            if (modeErr != 0)
+                return ApplyResult.Failed(
+                    $"set_power_saving/set_max_performance 失败: {modeErr}");
 
             // 2. 设置核心参数
             int err;

@@ -125,7 +125,18 @@ public class ModeScheduler
     {
         var info = new LASTINPUTINFO { cbSize = (uint)Marshal.SizeOf<LASTINPUTINFO>() };
         GetLastInputInfo(ref info);
-        return TimeSpan.FromMilliseconds(Environment.TickCount - info.dwTime);
+
+        // 使用 Environment.TickCount64 替代 TickCount，避免约 25 天后的 int 溢出。
+        // GetLastInputInfo 返回的 dwTime 是 DWORD（UInt32），约 49.7 天会溢出一次。
+        // 此处处理最常见的单次溢出场景（系统运行 50~100 天）。
+        long currentTick = Environment.TickCount64;
+        long lastInputTick = info.dwTime;
+
+        if (lastInputTick > currentTick)
+            lastInputTick -= uint.MaxValue;
+
+        long idleMs = currentTick - lastInputTick;
+        return TimeSpan.FromMilliseconds(Math.Max(0, idleMs));
     }
 
     /// <summary>
