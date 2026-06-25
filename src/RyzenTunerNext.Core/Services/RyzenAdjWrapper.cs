@@ -59,7 +59,18 @@ public sealed class RyzenAdjWrapper : IDisposable
                 var olsStatus = CheckOlsStatus();
                 if (!olsStatus.Contains("已就绪"))
                 {
-                    return (false, $"WinRing0 OLS 初始化失败: {olsStatus}");
+                    // OLS 未就绪，先尝试安装/启动 WinRing0 内核驱动再重试
+                    if (!CheckWinRing0Device().Contains("已就绪"))
+                    {
+                        EnsureWinRing0DriverRunning();
+                        Thread.Sleep(500);
+                    }
+
+                    olsStatus = CheckOlsStatus();
+                    if (!olsStatus.Contains("已就绪"))
+                    {
+                        return (false, $"WinRing0 OLS 初始化失败: {olsStatus}");
+                    }
                 }
 
                 // ===== 第 2 步：调用 init_ryzenadj =====
