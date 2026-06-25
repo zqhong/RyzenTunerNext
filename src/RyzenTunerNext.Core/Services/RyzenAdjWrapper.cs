@@ -101,8 +101,8 @@ public sealed class RyzenAdjWrapper : IDisposable
             details.Append($"{dllName}: {(loaded ? "OK" : "FAIL")}；");
         }
 
-        // 2. 检查 WinRing0 驱动服务状态
-        details.Append(CheckWinRing0Service());
+        // 2. 检查 WinRing0 驱动设备是否就绪
+        details.Append(CheckWinRing0Device());
 
         // 3. 再次设置 DLL 搜索路径确保正确
         NativeLibraryLoader.AddDllSearchPath(nativeDir);
@@ -122,69 +122,37 @@ public sealed class RyzenAdjWrapper : IDisposable
     }
 
     /// <summary>
-    /// 通过 SCM 检查 WinRing0 驱动服务状态。
+    /// 尝试打开 WinRing0 设备句柄来判断驱动是否已加载。
+    /// WinRing0 驱动加载后会创建 \\.\WinRing0_1_2_0 设备。
     /// </summary>
-    private static string CheckWinRing0Service()
+    private static string CheckWinRing0Device()
     {
-        const string serviceName = "WinRing0_1_2_0";
-        IntPtr scmHandle = IntPtr.Zero;
-        IntPtr serviceHandle = IntPtr.Zero;
-        try
+        const string devicePath = @"\\.\WinRing0_1_2_0";
+        var handle = CreateFile(devicePath, 0, 0, IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
+        if (handle == INVALID_HANDLE_VALUE)
         {
-            scmHandle = OpenSCManager(null, null, SC_MANAGER_CONNECT);
-            if (scmHandle == IntPtr.Zero)
-                return $"SCM 打开失败(lastErr={Marshal.GetLastWin32Error()})；";
-
-            serviceHandle = OpenService(scmHandle, serviceName, SERVICE_QUERY_STATUS);
-            if (serviceHandle == IntPtr.Zero)
-            {
-                var err = Marshal.GetLastWin32Error();
-                // ERROR_SERVICE_DOES_NOT_EXIST = 1060
-                return err == 1060
-                    ? "WinRing0 服务不存在；"
-                    : $"WinRing0 服务打开失败(lastErr={err})；";
-            }
-
-            if (QueryServiceStatus(serviceHandle, out var status))
-                return $"WinRing0 服务状态={status.dwCurrentState}；";
-
-            return $"WinRing0 服务查询失败(lastErr={Marshal.GetLastWin32Error()})；";
+            var err = Marshal.GetLastWin32Error();
+            // 2 = ERROR_FILE_NOT_FOUND（驱动未加载）
+            // 5 = ERROR_ACCESS_DENIED（权限不足）
+            return $"WinRing0 设备打开失败(lastErr={err})；";
         }
-        finally
-        {
-            if (serviceHandle != IntPtr.Zero) CloseServiceHandle(serviceHandle);
-            if (scmHandle != IntPtr.Zero) CloseServiceHandle(scmHandle);
-        }
+        CloseHandle(handle);
+        return "WinRing0 设备已就绪；";
     }
 
-    #region SCM P/Invoke
+    #region Device P/Invoke
 
-    private const uint SC_MANAGER_CONNECT = 0x0001;
-    private const uint SERVICE_QUERY_STATUS = 0x0004;
+    private const uint OPEN_EXISTING = 3;
+    private static readonly IntPtr INVALID_HANDLE_VALUE = new(-1);
 
-    [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-    private static extern IntPtr OpenSCManager(string? machineName, string? databaseName, uint dwDesiredAccess);
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern IntPtr CreateFile(
+        string lpFileName, uint dwDesiredAccess, uint dwShareMode,
+        IntPtr lpSecurityAttributes, uint dwCreationDisposition,
+        uint dwFlagsAndAttributes, IntPtr hTemplateFile);
 
-    [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-    private static extern IntPtr OpenService(IntPtr hSCManager, string lpServiceName, uint dwDesiredAccess);
-
-    [DllImport("advapi32.dll", SetLastError = true)]
-    private static extern bool QueryServiceStatus(IntPtr hService, out SERVICE_STATUS lpServiceStatus);
-
-    [DllImport("advapi32.dll", SetLastError = true)]
-    private static extern bool CloseServiceHandle(IntPtr hSCObject);
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct SERVICE_STATUS
-    {
-        public uint dwServiceType;
-        public uint dwCurrentState;
-        public uint dwControlsAccepted;
-        public uint dwWin32ExitCode;
-        public uint dwServiceSpecificExitCode;
-        public uint dwCheckPoint;
-        public uint dwWaitHint;
-    }
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool CloseHandle(IntPtr hObject);
 
     #endregion
 
