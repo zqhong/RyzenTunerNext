@@ -194,8 +194,9 @@ public sealed class RyzenAdjWrapper : IDisposable
     private const uint SERVICE_KERNEL_DRIVER = 0x00000001;
     private const uint SERVICE_DEMAND_START = 0x00000003;
     private const uint SERVICE_ERROR_NORMAL = 0x00000001;
-    private const uint SERVICE_RUNNING = 0x00000004;
+    private const uint SERVICE_STOPPED = 0x00000001;
     private const uint SERVICE_START_PENDING = 0x00000002;
+    private const uint SERVICE_RUNNING = 0x00000004;
 
     [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
     private static extern IntPtr OpenSCManager(
