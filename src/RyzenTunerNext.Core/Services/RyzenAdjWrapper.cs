@@ -39,6 +39,14 @@ public sealed class RyzenAdjWrapper : IDisposable
                 if (_handle == IntPtr.Zero)
                 {
                     // init_ryzenadj 失败，可能是 WinRing0 驱动加载问题
+                    // 先尝试检查并安装 WinRing0 驱动
+                    if (!CheckWinRing0Device().Contains("已就绪"))
+                    {
+                        EnsureWinRing0DriverRunning();
+                        // 等待一下驱动加载
+                        Thread.Sleep(500);
+                    }
+
                     // 尝试显式加载 WinRing0x64.dll 后重试
                     var retryDiag = TryExplicitLoadAndRetry();
                     if (_handle == IntPtr.Zero)
@@ -105,12 +113,28 @@ public sealed class RyzenAdjWrapper : IDisposable
         }
 
         // 2. 检查 WinRing0 驱动设备是否就绪
-        details.Append(CheckWinRing0Device());
+        var deviceStatus = CheckWinRing0Device();
+        details.Append(deviceStatus);
 
-        // 3. 再次设置 DLL 搜索路径确保正确
+        if (deviceStatus.Contains("失败"))
+        {
+            // 3. 尝试安装并启动 WinRing0 内核驱动
+            details.Append("尝试安装驱动...；");
+            bool installed = EnsureWinRing0DriverRunning();
+            details.Append($"驱动安装: {(installed ? "成功" : "失败")}；");
+
+            if (installed)
+            {
+                // 重新检查设备
+                var retryStatus = CheckWinRing0Device();
+                details.Append($"安装后检查: {retryStatus}；");
+            }
+        }
+
+        // 4. 再次设置 DLL 搜索路径确保正确
         NativeLibraryLoader.AddDllSearchPath(nativeDir);
 
-        // 4. 重试 init_ryzenadj
+        // 5. 重试 init_ryzenadj
         _handle = RyzenAdjNative.init_ryzenadj();
         if (_handle != IntPtr.Zero)
         {
@@ -162,6 +186,152 @@ public sealed class RyzenAdjWrapper : IDisposable
     private static extern bool CloseHandle(IntPtr hObject);
 
     #endregion
+
+    #region SCM P/Invoke (WinRing0 驱动安装/启动)
+
+    private const uint SC_MANAGER_ALL_ACCESS = 0xF003F;
+    private const uint SERVICE_ALL_ACCESS = 0xF01FF;
+    private const uint SERVICE_KERNEL_DRIVER = 0x00000001;
+    private const uint SERVICE_DEMAND_START = 0x00000003;
+    private const uint SERVICE_ERROR_NORMAL = 0x00000001;
+    private const uint SERVICE_RUNNING = 0x00000004;
+    private const uint SERVICE_START_PENDING = 0x00000002;
+
+    [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern IntPtr OpenSCManager(
+        string? lpMachineName, string? lpDatabaseName, uint dwDesiredAccess);
+
+    [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern IntPtr CreateService(
+        IntPtr hSCManager, string lpServiceName, string lpDisplayName,
+        uint dwDesiredAccess, uint dwServiceType, uint dwStartType,
+        uint dwErrorControl, string lpBinaryPathName,
+        string? lpLoadOrderGroup, IntPtr lpdwTagId,
+        string? lpDependencies, string? lpServiceStartName,
+        string? lpPassword);
+
+    [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern IntPtr OpenService(
+        IntPtr hSCManager, string lpServiceName, uint dwDesiredAccess);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    private static extern bool StartService(
+        IntPtr hService, uint dwNumServiceArgs, string[]? lpServiceArgVectors);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    private static extern bool QueryServiceStatus(
+        IntPtr hService, out SERVICE_STATUS lpServiceStatus);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    private static extern bool DeleteService(IntPtr hService);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    private static extern bool CloseServiceHandle(IntPtr hSCObject);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SERVICE_STATUS
+    {
+        public uint dwServiceType;
+        public uint dwCurrentState;
+        public uint dwControlsAccepted;
+        public uint dwWin32ExitCode;
+        public uint dwServiceSpecificExitCode;
+        public uint dwCheckPoint;
+        public uint dwWaitHint;
+    }
+
+    #endregion
+
+    /// <summary>
+    /// 确保 WinRing0 内核驱动已安装并运行。
+    /// WinRing0x64.sys 通过 SCM 注册为内核驱动服务并启动，
+    /// 驱动启动后会在 \\.\WinRing0_1_2_0 创建设备，供 WinRing0x64.dll 使用。
+    /// 需要在管理员权限下运行。
+    /// </summary>
+    private static bool EnsureWinRing0DriverRunning()
+    {
+        const string serviceName = "WinRing0_1_2_0";
+        const string displayName = "WinRing0 Low Level Access Driver";
+
+        var nativeDir = FindNativeDirectory();
+        if (nativeDir == null) return false;
+
+        var sysPath = Path.Combine(nativeDir, "WinRing0x64.sys");
+        if (!File.Exists(sysPath)) return false;
+
+        var scm = OpenSCManager(null, null, SC_MANAGER_ALL_ACCESS);
+        if (scm == IntPtr.Zero) return false;
+
+        try
+        {
+            // 尝试打开已有服务
+            var service = OpenService(scm, serviceName, SERVICE_ALL_ACCESS);
+            try
+            {
+                if (service == IntPtr.Zero)
+                {
+                    var lastErr = Marshal.GetLastWin32Error();
+                    // 1060 = ERROR_SERVICE_DOES_NOT_EXIST
+                    if (lastErr == 1060)
+                    {
+                        // 服务不存在，注册新的内核驱动服务
+                        service = CreateService(
+                            scm, serviceName, displayName,
+                            SERVICE_ALL_ACCESS, SERVICE_KERNEL_DRIVER,
+                            SERVICE_DEMAND_START, SERVICE_ERROR_NORMAL,
+                            sysPath, null, IntPtr.Zero, null, null, null
+                        );
+                    }
+                }
+
+                if (service == IntPtr.Zero) return false;
+
+                // 查询服务当前状态
+                if (QueryServiceStatus(service, out var status))
+                {
+                    if (status.dwCurrentState == SERVICE_RUNNING)
+                        return true;
+
+                    // 如果正在启动中，等待完成
+                    if (status.dwCurrentState == SERVICE_START_PENDING)
+                        return WaitForServiceStart(service, 5000);
+                }
+
+                // 启动服务
+                if (!StartService(service, 0, null)) return false;
+
+                // 等待驱动加载（最多 5 秒）
+                return WaitForServiceStart(service, 5000);
+            }
+            finally
+            {
+                if (service != IntPtr.Zero) CloseServiceHandle(service);
+            }
+        }
+        finally
+        {
+            CloseServiceHandle(scm);
+        }
+    }
+
+    /// <summary>
+    /// 等待服务达到运行状态，超时则返回 false。
+    /// </summary>
+    private static bool WaitForServiceStart(IntPtr service, int timeoutMs)
+    {
+        var deadline = Environment.TickCount + timeoutMs;
+        while (Environment.TickCount < deadline)
+        {
+            Thread.Sleep(200);
+            if (QueryServiceStatus(service, out var status))
+            {
+                if (status.dwCurrentState == SERVICE_RUNNING) return true;
+                if (status.dwCurrentState == SERVICE_STOPPED) return false;
+                // SERVICE_START_PENDING: 继续等待
+            }
+        }
+        return false;
+    }
 
     /// <summary>
     /// 查找 native/ 子目录（与 NativeLibraryLoader 逻辑一致）。
