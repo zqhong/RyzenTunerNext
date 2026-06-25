@@ -98,8 +98,8 @@ public sealed class RyzenAdjWrapper : IDisposable
         bool winringLoaded = NativeLibrary.TryLoad(winringDllPath, out var winringHandle);
         details.Append($"WinRing0x64.dll 加载: {(winringLoaded ? "成功" : "失败")}");
 
-        // 2. 再次调用 SetDllDirectory 确保搜索路径正确
-        SetDllDirectory(nativeDir);
+        // 2. 再次设置 DLL 搜索路径确保正确
+        NativeLibraryLoader.AddDllSearchPath(nativeDir);
 
         // 3. 重试 init_ryzenadj
         _handle = RyzenAdjNative.init_ryzenadj();

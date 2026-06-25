@@ -74,6 +74,15 @@ public static class NativeLibraryLoader
         return null;
     }
 
+    /// <summary>
+    /// 将指定目录加入 Windows DLL 搜索路径。
+    /// 供其他模块在需要时重新设置搜索路径。
+    /// </summary>
+    internal static void AddDllSearchPath(string directory)
+    {
+        SetDllDirectory(directory);
+    }
+
     [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
     private static extern bool SetDllDirectory(string lpPathName);
 }
