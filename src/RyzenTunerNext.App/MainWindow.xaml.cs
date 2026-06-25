@@ -44,22 +44,31 @@ public sealed partial class MainWindow : Window
 
     public MainWindow()
     {
+        DiagnosticFileLogger.Write("[MainWindow] InitializeComponent 开始");
         InitializeComponent();
+        DiagnosticFileLogger.Write("[MainWindow] InitializeComponent 完成");
 
         Title = "RyzenTunerNext";
 
         // 设置窗口大小
+        DiagnosticFileLogger.Write("[MainWindow] 设置窗口大小");
         var hWnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
         var windowId = Win32Interop.GetWindowIdFromWindow(hWnd);
         var appWindow = AppWindow.GetFromWindowId(windowId);
         appWindow.Resize(new Windows.Graphics.SizeInt32(1000, 700));
 
         // 窗口关闭时清理资源
-        this.Closed += (_, _) => Cleanup();
+        this.Closed += (_, _) =>
+        {
+            DiagnosticFileLogger.Write("[MainWindow] Closed 事件触发");
+            Cleanup();
+        };
 
         // 初始化系统托盘
+        DiagnosticFileLogger.Write("[MainWindow] 初始化系统托盘");
         _trayHelper = new TrayIconHelper(this);
         SetupTrayIcon();
+        DiagnosticFileLogger.Write("[MainWindow] 系统托盘初始化完成");
 
         // 恢复窗口位置
         _ = RestoreWindowPositionAsync();
@@ -73,14 +82,19 @@ public sealed partial class MainWindow : Window
 
         // 窗口激活后显示待处理弹窗
         Activated += OnWindowActivated;
+
+        DiagnosticFileLogger.Write("[MainWindow] 构造函数完成");
     }
 
     #region 系统托盘
 
     private void SetupTrayIcon()
     {
+        DiagnosticFileLogger.Write("[MainWindow] SetupTrayIcon 开始");
+
         // 设置图标 (使用 PNG 格式，BitmapImage 不支持 ICO)
         var iconPath = System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "app.png");
+        DiagnosticFileLogger.Write($"[MainWindow] 图标路径: {iconPath}, 存在: {System.IO.File.Exists(iconPath)}");
         if (System.IO.File.Exists(iconPath))
         {
             TrayIcon.IconSource = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(
@@ -88,6 +102,7 @@ public sealed partial class MainWindow : Window
         }
 
         // 设置右键菜单
+        DiagnosticFileLogger.Write("[MainWindow] 创建右键菜单");
         var contextMenu = _trayHelper.CreateContextMenu();
         TrayIcon.ContextFlyout = new Flyout
         {
@@ -106,6 +121,7 @@ public sealed partial class MainWindow : Window
 
         // 初始状态（单进程模式下始终为运行中）
         _trayHelper.UpdateServiceStatus(true);
+        DiagnosticFileLogger.Write("[MainWindow] SetupTrayIcon 完成");
     }
 
     private void OnStatusUpdated(object? sender, StatusUpdateMessage statusMsg)
@@ -317,8 +333,10 @@ public sealed partial class MainWindow : Window
 
     private void NavView_Loaded(object sender, RoutedEventArgs e)
     {
+        DiagnosticFileLogger.Write("[MainWindow] NavView_Loaded 触发");
         NavView.SelectedItem = NavView.MenuItems[0];
         ContentFrame.Navigate(typeof(HomePage));
+        DiagnosticFileLogger.Write("[MainWindow] HomePage 导航完成");
     }
 
     private void NavView_ItemInvoked(NavigationView sender, NavigationViewItemInvokedEventArgs args)
@@ -352,20 +370,21 @@ public sealed partial class MainWindow : Window
     {
         if (args.WindowActivationState != WindowActivationState.Deactivated)
         {
-            // 首次激活时显示待处理弹窗
+            DiagnosticFileLogger.Write("[MainWindow] OnWindowActivated 首次激活");
             Activated -= OnWindowActivated;
 
-            // 获取 XamlRoot
             if (Content is FrameworkElement root)
             {
+                DiagnosticFileLogger.Write("[MainWindow] 显示待处理弹窗");
                 await ((App)Application.Current).ShowPendingDialogsAsync(root.XamlRoot);
+                DiagnosticFileLogger.Write("[MainWindow] 待处理弹窗完成");
             }
 
-            // 窗口关闭时保存位置
             if (App.MainWindow == null)
             {
                 App.SetMainWindow(this);
             }
+            DiagnosticFileLogger.Write("[MainWindow] OnWindowActivated 完成");
         }
     }
 

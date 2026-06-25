@@ -31,6 +31,18 @@ public partial class App : Application
 
     public App()
     {
+        // 全局异常捕获 — 记录未处理的异常，避免进程静默退出
+        UnhandledException += (_, e) =>
+        {
+            DiagnosticFileLogger.Write($"[UnhandledException] {e.Exception}");
+            DiagnosticFileLogger.Write($"[UnhandledException] Handled: {e.Handled}");
+        };
+        TaskScheduler.UnobservedTaskException += (_, e) =>
+        {
+            DiagnosticFileLogger.Write($"[UnobservedTaskException] {e.Exception}");
+            e.SetObserved();
+        };
+
         // 尽早初始化原生库搜索路径（native/ 子目录）
         // 必须在任何 P/Invoke 调用之前
         NativeLibraryLoader.Initialize();
