@@ -5,12 +5,12 @@ namespace RyzenTunerNext.App.ViewModels;
 
 public partial class AboutViewModel : ObservableObject
 {
-    [ObservableProperty] private string _version = "1.0.0";
-    [ObservableProperty] private string _engineVersion = "v0.19.0";
-    [ObservableProperty] private string _cpuFamily = "检测中...";
-    [ObservableProperty] private bool _serviceRunning;
-    [ObservableProperty] private bool _ryzenAdjInitialized;
-    [ObservableProperty] private string _framework = ".NET 8 + WinUI 3";
+    [ObservableProperty] public partial string Version { get; set; } = "1.0.0";
+    [ObservableProperty] public partial string EngineVersion { get; set; } = "v0.19.0";
+    [ObservableProperty] public partial string CpuFamily { get; set; } = "检测中...";
+    [ObservableProperty] public partial bool ServiceRunning { get; set; }
+    [ObservableProperty] public partial bool RyzenAdjInitialized { get; set; }
+    [ObservableProperty] public partial string Framework { get; set; } = ".NET 10 + WinUI 3";
 
     public void Refresh()
     {

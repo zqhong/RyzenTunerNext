@@ -9,9 +9,9 @@ public partial class LogViewModel : ObservableObject
 {
     public ObservableCollection<LogEntry> Logs { get; } = new();
 
-    [ObservableProperty] private string? _selectedLevel;
-    [ObservableProperty] private string? _searchText;
-    [ObservableProperty] private bool _isLoading;
+    [ObservableProperty] public partial string? SelectedLevel { get; set; }
+    [ObservableProperty] public partial string? SearchText { get; set; }
+    [ObservableProperty] public partial bool IsLoading { get; set; }
 
     public string[] Levels { get; } = ["所有", "Info", "Warning", "Error"];
 

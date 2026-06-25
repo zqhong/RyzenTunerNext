@@ -11,9 +11,9 @@ public partial class ProfilerViewModel : ObservableObject
 {
     public ObservableCollection<ProfilerResult> Results { get; } = new();
 
-    [ObservableProperty] private bool _isRunning;
-    [ObservableProperty] private string _statusText = "就绪";
-    [ObservableProperty] private double _progress;
+    [ObservableProperty] public partial bool IsRunning { get; set; }
+    [ObservableProperty] public partial string StatusText { get; set; } = "就绪";
+    [ObservableProperty] public partial double Progress { get; set; }
 
     /// <summary>要测试的功耗档位 (mW)</summary>
     public int[] PowerLevels { get; } = [15000, 25000, 35000, 45000, 54000];

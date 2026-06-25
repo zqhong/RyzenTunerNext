@@ -1,0 +1,6 @@
+<Project>
+  <PropertyGroup>
+    <!-- SQLitePCLRaw.lib.e_sqlite3 <=2.1.11 有已知漏洞，暂无修复版本 -->
+    <NoWarn>$(NoWarn);NU1903</NoWarn>
+  </PropertyGroup>
+</Project>

@@ -9,30 +9,30 @@ namespace RyzenTunerNext.App.ViewModels;
 public partial class SettingsViewModel : ObservableObject
 {
     // ===== 功耗参数 =====
-    [ObservableProperty] private int _fastLimitPerformance = 45000;
-    [ObservableProperty] private int _slowLimitPerformance = 45000;
-    [ObservableProperty] private int _fastLimitPowersaving = 25000;
-    [ObservableProperty] private int _slowLimitPowersaving = 15000;
-    [ObservableProperty] private int _tctlTemp = 90;
-    [ObservableProperty] private int _applyInterval = 4000;
-    [ObservableProperty] private int _logRetentionDays = 30;
+    [ObservableProperty] public partial int FastLimitPerformance { get; set; } = 45000;
+    [ObservableProperty] public partial int SlowLimitPerformance { get; set; } = 45000;
+    [ObservableProperty] public partial int FastLimitPowersaving { get; set; } = 25000;
+    [ObservableProperty] public partial int SlowLimitPowersaving { get; set; } = 15000;
+    [ObservableProperty] public partial int TctlTemp { get; set; } = 90;
+    [ObservableProperty] public partial int ApplyInterval { get; set; } = 4000;
+    [ObservableProperty] public partial int LogRetentionDays { get; set; } = 30;
 
     // ===== Service 管理 =====
-    [ObservableProperty] private bool _serviceInstalled;
-    [ObservableProperty] private bool _serviceRunning;
-    [ObservableProperty] private string _serviceStatusText = "检测中...";
+    [ObservableProperty] public partial bool ServiceInstalled { get; set; }
+    [ObservableProperty] public partial bool ServiceRunning { get; set; }
+    [ObservableProperty] public partial string ServiceStatusText { get; set; } = "检测中...";
 
     // ===== 主题和语言 =====
-    [ObservableProperty] private int _selectedThemeIndex;  // 0=跟随系统, 1=亮色, 2=暗色
-    [ObservableProperty] private int _selectedLanguageIndex;  // 0=跟随系统, 1=中文, 2=English
+    [ObservableProperty] public partial int SelectedThemeIndex { get; set; }  // 0=跟随系统, 1=亮色, 2=暗色
+    [ObservableProperty] public partial int SelectedLanguageIndex { get; set; }  // 0=跟随系统, 1=中文, 2=English
 
     public string[] ThemeOptions { get; } = ["跟随系统", "亮色", "暗色"];
     public string[] LanguageOptions { get; } = ["跟随系统", "中文", "English"];
 
     // ===== 快捷键 =====
-    [ObservableProperty] private string _hotkeyToggleMode = "";
-    [ObservableProperty] private string _hotkeyApplyNow = "";
-    [ObservableProperty] private string _hotkeyShowWindow = "";
+    [ObservableProperty] public partial string HotkeyToggleMode { get; set; } = "";
+    [ObservableProperty] public partial string HotkeyApplyNow { get; set; } = "";
+    [ObservableProperty] public partial string HotkeyShowWindow { get; set; } = "";
 
     // ===== 加载/保存 =====
 

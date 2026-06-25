@@ -89,7 +89,64 @@ jobs:
             --verbosity minimal
         shell: pwsh
 
-      # 合并 Service 到 App 目录的 Service/ 子目录，打包为单一 zip
+      # 清理不需要的文件
+      - name: Cleanup Publish Output
+        run: |
+          Write-Host "=== 清理 App 产物 ==="
+
+          # 移除 locale 目录（WinUI MUI 资源，zh-CN / zh-TW / en-us 保留）
+          $keepLocales = @("zh-CN", "zh-TW", "en-us")
+          Get-ChildItem publish\app -Directory | Where-Object {
+            $_.Name -match '^[a-z]{2,3}(-[A-Za-z]+){1,2}$' -and $_.Name -notin $keepLocales
+          } | ForEach-Object {
+            Write-Host "  移除 locale: $($_.Name)"
+            Remove-Item $_.FullName -Recurse -Force
+          }
+
+          # 移除 NpuDetect（NPU 检测，本工具不需要）
+          if (Test-Path "publish\app\NpuDetect") {
+            Write-Host "  移除 NpuDetect/"
+            Remove-Item "publish\app\NpuDetect" -Recurse -Force
+          }
+
+          # 移除 createdump.exe（诊断工具）
+          Get-ChildItem publish\app -Filter "createdump.exe" -Recurse | ForEach-Object {
+            Write-Host "  移除 $($_.Name)"
+            Remove-Item $_.FullName -Force
+          }
+
+          # 移除 .pdb 文件（调试符号）
+          Get-ChildItem publish\app -Filter "*.pdb" -Recurse | ForEach-Object {
+            Write-Host "  移除 $($_.Name)"
+            Remove-Item $_.FullName -Force
+          }
+
+          Write-Host ""
+          Write-Host "=== 清理 Service 产物 ==="
+
+          # 移除 Service 中的 locale 目录
+          Get-ChildItem publish\service -Directory | Where-Object {
+            $_.Name -match '^[a-z]{2,3}(-[A-Za-z]+){1,2}$'
+          } | ForEach-Object {
+            Write-Host "  移除 locale: $($_.Name)"
+            Remove-Item $_.FullName -Recurse -Force
+          }
+
+          # 移除 Service 中的 createdump.exe 和 .pdb
+          Get-ChildItem publish\service -Filter "createdump.exe" | ForEach-Object {
+            Write-Host "  移除 $($_.Name)"
+            Remove-Item $_.FullName -Force
+          }
+          Get-ChildItem publish\service -Filter "*.pdb" | ForEach-Object {
+            Write-Host "  移除 $($_.Name)"
+            Remove-Item $_.FullName -Force
+          }
+
+          Write-Host ""
+          Write-Host "=== 清理完成 ==="
+        shell: pwsh
+
+      # 合并 Service 到 App 目录的 Service/ 子目录
       - name: Package Artifacts
         run: |
           Write-Host "=== 合并 Service 到 App 目录 ==="
@@ -98,10 +155,18 @@ jobs:
 
           Write-Host ""
           Write-Host "=== 根目录内容 ==="
-          Get-ChildItem publish\app -Name | Select-Object -First 30 | ForEach-Object { Write-Host "  $_" }
+          Get-ChildItem publish\app -Name | ForEach-Object { Write-Host "  $_" }
           Write-Host ""
           Write-Host "=== Service/ 子目录内容 ==="
-          Get-ChildItem publish\app\Service -Name | Select-Object -First 20 | ForEach-Object { Write-Host "  $_" }
+          Get-ChildItem publish\app\Service -Name | ForEach-Object { Write-Host "  $_" }
+
+          Write-Host ""
+          $rootFiles = (Get-ChildItem publish\app -File | Measure-Object).Count
+          $rootDirs = (Get-ChildItem publish\app -Directory | Measure-Object).Count
+          $svcFiles = (Get-ChildItem publish\app\Service -File | Measure-Object).Count
+          Write-Host "=== 统计 ==="
+          Write-Host "  根目录: ${rootFiles} 文件, ${rootDirs} 目录"
+          Write-Host "  Service/: ${svcFiles} 文件"
         shell: pwsh
 
       # 输出构建摘要

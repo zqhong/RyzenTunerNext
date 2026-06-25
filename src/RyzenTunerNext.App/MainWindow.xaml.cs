@@ -14,7 +14,6 @@ namespace RyzenTunerNext.App;
 public sealed partial class MainWindow : Window
 {
     private TrayIconHelper _trayHelper;
-    private bool _forceClose;
 
     // 窗口位置记忆
     private const string SettingKeyWindowLeft = "window_left";
@@ -25,7 +24,6 @@ public sealed partial class MainWindow : Window
     // 自动最小化到托盘
     private DispatcherTimer? _idleCheckTimer;
     private DateTime _lastUserInputTime = DateTime.Now;
-    private bool _autoMinimizeEnabled;
 
     // 托盘 Tooltip 更新
     private string _currentMode = "Auto";
@@ -104,11 +102,7 @@ public sealed partial class MainWindow : Window
             await App.PipeClient.SendAsync(new SetModeMessage { Mode = mode });
             await App.Settings.SetAsync("energy_mode", mode);
         };
-        _trayHelper.ExitRequested += (_, _) =>
-        {
-            _forceClose = true;
-            Close();
-        };
+        _trayHelper.ExitRequested += (_, _) => Close();
 
         // 初始状态
         _trayHelper.UpdateServiceStatus(App.PipeClient.IsConnected);
@@ -255,7 +249,6 @@ public sealed partial class MainWindow : Window
         var mode = await App.Settings.GetEnergyModeAsync();
         if (mode != "Auto")
         {
-            _autoMinimizeEnabled = false;
             return;
         }
 

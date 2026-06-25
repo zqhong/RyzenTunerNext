@@ -6,21 +6,21 @@ namespace RyzenTunerNext.App.ViewModels;
 
 public partial class HomeViewModel : ObservableObject
 {
-    [ObservableProperty] private bool _isConnected;
-    [ObservableProperty] private string _currentMode = "Auto";
-    [ObservableProperty] private double _cpuFrequency;
-    [ObservableProperty] private double _socketPower;
-    [ObservableProperty] private double _cpuTemp;
+    [ObservableProperty] public partial bool IsConnected { get; set; }
+    [ObservableProperty] public partial string CurrentMode { get; set; } = "Auto";
+    [ObservableProperty] public partial double CpuFrequency { get; set; }
+    [ObservableProperty] public partial double SocketPower { get; set; }
+    [ObservableProperty] public partial double CpuTemp { get; set; }
 
-    [ObservableProperty] private double _fastLimitSet;
-    [ObservableProperty] private double _slowLimitSet;
-    [ObservableProperty] private double _tctlTempSet;
+    [ObservableProperty] public partial double FastLimitSet { get; set; }
+    [ObservableProperty] public partial double SlowLimitSet { get; set; }
+    [ObservableProperty] public partial double TctlTempSet { get; set; }
 
-    [ObservableProperty] private double _fastLimitActual;
-    [ObservableProperty] private double _slowLimitActual;
-    [ObservableProperty] private double _tctlTempActual;
+    [ObservableProperty] public partial double FastLimitActual { get; set; }
+    [ObservableProperty] public partial double SlowLimitActual { get; set; }
+    [ObservableProperty] public partial double TctlTempActual { get; set; }
 
-    [ObservableProperty] private string? _capWarning;
+    [ObservableProperty] public partial string? CapWarning { get; set; }
 
     // 格式化显示属性（WinUI 3 的 Binding 不支持 StringFormat）
     public string CpuFrequencyDisplay => CpuFrequency.ToString("F0");
