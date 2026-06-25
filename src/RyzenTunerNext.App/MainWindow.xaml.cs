@@ -65,11 +65,18 @@ public sealed partial class MainWindow : Window
             Cleanup();
         };
 
-        // 初始化系统托盘
+        // 初始化系统托盘（图标设置失败不应阻断窗口初始化）
         DiagnosticFileLogger.Write("[MainWindow] 初始化系统托盘");
         _trayHelper = new TrayIconHelper(this);
-        SetupTrayIcon();
-        DiagnosticFileLogger.Write("[MainWindow] 系统托盘初始化完成");
+        try
+        {
+            SetupTrayIcon();
+            DiagnosticFileLogger.Write("[MainWindow] 系统托盘初始化完成");
+        }
+        catch (Exception ex)
+        {
+            DiagnosticFileLogger.Write($"[MainWindow] 托盘图标设置失败（不影响主功能）: {ex.Message}");
+        }
 
         // 恢复窗口位置
         _ = RestoreWindowPositionAsync();
