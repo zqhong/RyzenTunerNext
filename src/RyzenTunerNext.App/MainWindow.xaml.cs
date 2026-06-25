@@ -93,14 +93,21 @@ public sealed partial class MainWindow : Window
     {
         DiagnosticFileLogger.Write("[MainWindow] SetupTrayIcon 开始");
 
-        // 设置图标（使用 ICO 格式，H.NotifyIcon 的 PNG→Icon 转换存在兼容性问题）
+        // 设置图标（ICO 格式，BitmapImage 可直接加载；PNG 转 Icon 在 .NET 10 上有兼容性问题）
         var iconPath = System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "app.ico");
         DiagnosticFileLogger.Write($"[MainWindow] 图标路径: {iconPath}, 存在: {System.IO.File.Exists(iconPath)}");
         if (System.IO.File.Exists(iconPath))
         {
-            var icon = new System.Drawing.Icon(iconPath, new System.Drawing.Size(16, 16));
-            TrayIcon.Icon = icon;
-            DiagnosticFileLogger.Write("[MainWindow] 图标设置成功");
+            try
+            {
+                TrayIcon.IconSource = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(
+                    new Uri($"file:///{iconPath.Replace('\\', '/')}"));
+                DiagnosticFileLogger.Write("[MainWindow] 图标设置成功");
+            }
+            catch (Exception ex)
+            {
+                DiagnosticFileLogger.Write($"[MainWindow] 图标设置失败: {ex.Message}");
+            }
         }
 
         // 设置右键菜单
