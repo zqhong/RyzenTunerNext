@@ -82,7 +82,7 @@ public sealed class RyzenAdjWrapper : IDisposable
     }
 
     /// <summary>
-    /// 尝试显式加载 WinRing0x64.dll 并重试 init_ryzenadj。
+    /// 尝试显式加载各 DLL 并重试 init_ryzenadj。
     /// 返回诊断信息字符串。
     /// </summary>
     private string TryExplicitLoadAndRetry()
@@ -93,15 +93,21 @@ public sealed class RyzenAdjWrapper : IDisposable
 
         var details = new System.Text.StringBuilder();
 
-        // 1. 显式加载 WinRing0x64.dll
-        var winringDllPath = Path.Combine(nativeDir, "WinRing0x64.dll");
-        bool winringLoaded = NativeLibrary.TryLoad(winringDllPath, out var winringHandle);
-        details.Append($"WinRing0x64.dll 加载: {(winringLoaded ? "成功" : "失败")}");
+        // 1. 逐个测试 DLL 可加载性
+        foreach (var dllName in new[] { "libryzenadj.dll", "WinRing0x64.dll", "inpoutx64.dll" })
+        {
+            var dllPath = Path.Combine(nativeDir, dllName);
+            bool loaded = NativeLibrary.TryLoad(dllPath, out _);
+            details.Append($"{dllName}: {(loaded ? "OK" : "FAIL")}；");
+        }
 
-        // 2. 再次设置 DLL 搜索路径确保正确
+        // 2. 检查 WinRing0 驱动服务状态
+        details.Append(CheckWinRing0Service());
+
+        // 3. 再次设置 DLL 搜索路径确保正确
         NativeLibraryLoader.AddDllSearchPath(nativeDir);
 
-        // 3. 重试 init_ryzenadj
+        // 4. 重试 init_ryzenadj
         _handle = RyzenAdjNative.init_ryzenadj();
         if (_handle != IntPtr.Zero)
         {
@@ -110,17 +116,77 @@ public sealed class RyzenAdjWrapper : IDisposable
         else
         {
             details.Append("；重试 init_ryzenadj 仍返回 NULL");
-            // 检查驱动文件详情
-            var sysPath = Path.Combine(nativeDir, "WinRing0x64.sys");
-            if (File.Exists(sysPath))
-            {
-                var fi = new FileInfo(sysPath);
-                details.Append($"；WinRing0x64.sys 大小={fi.Length}B, 修改时间={fi.LastWriteTime}");
-            }
         }
 
         return details.ToString();
     }
+
+    /// <summary>
+    /// 通过 SCM 检查 WinRing0 驱动服务状态。
+    /// </summary>
+    private static string CheckWinRing0Service()
+    {
+        const string serviceName = "WinRing0_1_2_0";
+        IntPtr scmHandle = IntPtr.Zero;
+        IntPtr serviceHandle = IntPtr.Zero;
+        try
+        {
+            scmHandle = OpenSCManager(null, null, SC_MANAGER_CONNECT);
+            if (scmHandle == IntPtr.Zero)
+                return $"SCM 打开失败(lastErr={Marshal.GetLastWin32Error()})；";
+
+            serviceHandle = OpenService(scmHandle, serviceName, SERVICE_QUERY_STATUS);
+            if (serviceHandle == IntPtr.Zero)
+            {
+                var err = Marshal.GetLastWin32Error();
+                // ERROR_SERVICE_DOES_NOT_EXIST = 1060
+                return err == 1060
+                    ? "WinRing0 服务不存在；"
+                    : $"WinRing0 服务打开失败(lastErr={err})；";
+            }
+
+            if (QueryServiceStatus(serviceHandle, out var status))
+                return $"WinRing0 服务状态={status.dwCurrentState}；";
+
+            return $"WinRing0 服务查询失败(lastErr={Marshal.GetLastWin32Error()})；";
+        }
+        finally
+        {
+            if (serviceHandle != IntPtr.Zero) CloseServiceHandle(serviceHandle);
+            if (scmHandle != IntPtr.Zero) CloseServiceHandle(scmHandle);
+        }
+    }
+
+    #region SCM P/Invoke
+
+    private const uint SC_MANAGER_CONNECT = 0x0001;
+    private const uint SERVICE_QUERY_STATUS = 0x0004;
+
+    [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern IntPtr OpenSCManager(string? machineName, string? databaseName, uint dwDesiredAccess);
+
+    [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern IntPtr OpenService(IntPtr hSCManager, string lpServiceName, uint dwDesiredAccess);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    private static extern bool QueryServiceStatus(IntPtr hService, out SERVICE_STATUS lpServiceStatus);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    private static extern bool CloseServiceHandle(IntPtr hSCObject);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SERVICE_STATUS
+    {
+        public uint dwServiceType;
+        public uint dwCurrentState;
+        public uint dwControlsAccepted;
+        public uint dwWin32ExitCode;
+        public uint dwServiceSpecificExitCode;
+        public uint dwCheckPoint;
+        public uint dwWaitHint;
+    }
+
+    #endregion
 
     /// <summary>
     /// 查找 native/ 子目录（与 NativeLibraryLoader 逻辑一致）。
