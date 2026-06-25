@@ -1,6 +1,8 @@
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics.X86;
 using System.Text;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using RyzenTunerNext.Core.Models;
 
 namespace RyzenTunerNext.Core.Services;
@@ -12,12 +14,18 @@ namespace RyzenTunerNext.Core.Services;
 public sealed class RyzenAdjWrapper : IDisposable
 {
     private readonly object _lock = new();
+    private readonly ILogger<RyzenAdjWrapper> _logger;
     private IntPtr _handle;
     private bool _tableInitialized;
     private bool _disposed;
 
     public bool IsInitialized => _handle != IntPtr.Zero;
     public bool IsTableInitialized => _tableInitialized;
+
+    public RyzenAdjWrapper(ILogger<RyzenAdjWrapper>? logger = null)
+    {
+        _logger = logger ?? NullLogger<RyzenAdjWrapper>.Instance;
+    }
 
     // =====================================================================
     //  Initialize — 含精确诊断的重试流程
@@ -36,6 +44,8 @@ public sealed class RyzenAdjWrapper : IDisposable
 
             try
             {
+                _logger.LogInformation("RyzenAdj 初始化开始");
+
                 // ===== 第 1 步：前置检查 =====
 
                 // 确保 DLL 搜索路径包含 native/ 子目录
@@ -44,50 +54,71 @@ public sealed class RyzenAdjWrapper : IDisposable
                     NativeLibraryLoader.AddDllSearchPath(nativeDir);
 
                 // 1a) DLL 文件存在
+                _logger.LogDebug("初始化步骤 1a: 检查 native/ 文件完整性 (路径: {NativeDir})", nativeDir);
                 var diag = RunDiagnostics();
                 if (diag != null)
                     return (false, $"前置检查失败: {diag}");
+                _logger.LogDebug("native/ 文件完整性检查通过");
 
                 // 1b) CPU 兼容性检测（无需管理员权限即可执行）
+                _logger.LogDebug("初始化步骤 1b: CPU 兼容性检测");
                 var cpuInfo = GetCpuInfo();
+                _logger.LogInformation("CPU 检测: {CpuName}, Vendor={Vendor}, Family=0x{Family:X}, Model=0x{Model:X}, {Supported}",
+                    cpuInfo.Name, cpuInfo.Vendor, cpuInfo.Family, cpuInfo.Model,
+                    cpuInfo.Supported ? "支持" : "不支持");
                 if (!cpuInfo.Supported)
                 {
+                    _logger.LogError("CPU 不支持: {Error}", $"Family=0x{cpuInfo.Family:X}, Model=0x{cpuInfo.Model:X}");
                     return (false, $"CPU 不被 RyzenAdj v0.19.0 支持。CPU: {cpuInfo.Name}(Family=0x{cpuInfo.Family:X}, Model=0x{cpuInfo.Model:X})。需要更新 libryzenadj.dll 以支持该 CPU");
                 }
 
                 // 1c) WinRing0 OLS 初始化状态
+                _logger.LogDebug("初始化步骤 1c: WinRing0 OLS 状态检查");
                 var olsStatus = CheckOlsStatus();
+                _logger.LogInformation("OLS 检查: {OlsStatus}", olsStatus);
                 if (!olsStatus.Contains("已就绪"))
                 {
-                    // OLS 未就绪，先尝试安装/启动 WinRing0 内核驱动再重试
+                    _logger.LogInformation("OLS 未就绪，尝试安装/启动 WinRing0 内核驱动");
+
                     if (!CheckWinRing0Device().Contains("已就绪"))
                     {
-                        EnsureWinRing0DriverRunning();
+                        _logger.LogInformation("WinRing0 设备不可用，通过 SCM 安装驱动");
+                        var installed = EnsureWinRing0DriverRunning();
+                        _logger.LogInformation("WinRing0 驱动安装/启动: {Result}", installed ? "成功" : "失败");
                         Thread.Sleep(500);
                     }
 
                     olsStatus = CheckOlsStatus();
+                    _logger.LogInformation("OLS 重试检查: {OlsStatus}", olsStatus);
                     if (!olsStatus.Contains("已就绪"))
                     {
+                        _logger.LogError("OLS 初始化失败 (驱动安装后仍失败): {OlsStatus}", olsStatus);
                         return (false, $"WinRing0 OLS 初始化失败: {olsStatus}");
                     }
                 }
 
                 // ===== 第 2 步：调用 init_ryzenadj =====
+                _logger.LogDebug("初始化步骤 2: init_ryzenadj");
                 _handle = RyzenAdjNative.init_ryzenadj();
+                _logger.LogInformation("init_ryzenadj 首次调用: {Result}", _handle != IntPtr.Zero ? "成功" : "返回 NULL");
                 if (_handle == IntPtr.Zero)
                 {
+                    _logger.LogInformation("init_ryzenadj 失败，检查 WinRing0 设备状态");
                     if (!CheckWinRing0Device().Contains("已就绪"))
                     {
+                        _logger.LogInformation("WinRing0 设备不可用，安装/启动驱动");
                         EnsureWinRing0DriverRunning();
                         Thread.Sleep(500);
                     }
 
                     // 接管 stderr 以捕获 libryzenadj 的诊断输出
+                    _logger.LogDebug("带 stderr 捕获重试 init_ryzenadj");
                     (_handle, var stderrOutput) = CaptureStderr(() => RyzenAdjNative.init_ryzenadj());
+                    _logger.LogInformation("init_ryzenadj 重试: {Result}", _handle != IntPtr.Zero ? "成功" : "返回 NULL");
 
                     if (_handle == IntPtr.Zero)
                     {
+                        _logger.LogWarning("init_ryzenadj stderr 输出: {Stderr}", stderrOutput.Trim());
                         var lines = stderrOutput.Trim();
                         var sb = new StringBuilder();
                         sb.Append("init_ryzenadj 返回空句柄。");
@@ -99,30 +130,46 @@ public sealed class RyzenAdjWrapper : IDisposable
 
                         // 根据 stderr 输出给出引导
                         if (lines.Contains("PCI Bus is not writeable"))
+                        {
+                            _logger.LogError("init_ryzenadj 失败: PCI 配置空间不可写，请检查 Secure Boot/VBS/Hyper-V");
                             sb.Append("PCI 配置空间不可写，请检查：Secure Boot/VBS/Hyper-V 是否开启？");
+                        }
                         else if (lines.Contains("Unable to get os_access"))
+                        {
+                            _logger.LogError("init_ryzenadj 失败: WinRing0 无法获取 os_access，请以管理员权限运行");
                             sb.Append("WinRing0 初始化失败，请以管理员权限运行。");
+                        }
                         else if (lines.Contains("Unable to get") || lines.Contains("Failed to get SMU"))
+                        {
+                            _logger.LogError("init_ryzenadj 失败: SMU 检测失败，可能原因：不支持的 CPU 型号或 BIOS 限制");
                             sb.Append("SMU 检测失败，可能原因：不支持的 CPU 型号或 BIOS 限制。");
+                        }
 
                         return (false, sb.ToString());
                     }
                 }
 
                 // ===== 第 3 步：init_table =====
+                _logger.LogDebug("初始化步骤 3: init_table");
                 int tableResult = RyzenAdjNative.init_table(_handle);
                 _tableInitialized = tableResult == 0;
                 if (tableResult != 0)
+                {
+                    _logger.LogError("init_table 失败: {Result}", tableResult);
                     return (false, $"init_table 失败: {tableResult}");
+                }
 
+                _logger.LogInformation("RyzenAdj 初始化完成");
                 return (true, null);
             }
             catch (DllNotFoundException ex)
             {
+                _logger.LogError(ex, "DLL 加载失败");
                 return (false, $"DLL 加载失败: {ex.Message}");
             }
             catch (EntryPointNotFoundException ex)
             {
+                _logger.LogError(ex, "DLL 入口点未找到");
                 return (false, $"DLL 入口点未找到: {ex.Message}");
             }
             catch (Exception ex)
@@ -333,7 +380,7 @@ public sealed class RyzenAdjWrapper : IDisposable
     /// <summary>
     /// 尝试打开 WinRing0 设备句柄来判断驱动是否已加载。
     /// </summary>
-    private static string CheckWinRing0Device()
+    private string CheckWinRing0Device()
     {
         const string devicePath = @"\\.\WinRing0_1_2_0";
         var handle = CreateFile(devicePath, 0, FILE_SHARE_READ | FILE_SHARE_WRITE,
@@ -341,9 +388,11 @@ public sealed class RyzenAdjWrapper : IDisposable
         if (handle == INVALID_HANDLE_VALUE)
         {
             var err = Marshal.GetLastWin32Error();
+            _logger.LogWarning("WinRing0 设备打开失败 (lastErr={LastError})", err);
             return $"WinRing0 设备打开失败(lastErr={err})；";
         }
         CloseHandle(handle);
+        _logger.LogDebug("WinRing0 设备已就绪");
         return "WinRing0 设备已就绪；";
     }
 
@@ -354,19 +403,33 @@ public sealed class RyzenAdjWrapper : IDisposable
     /// <summary>
     /// 确保 WinRing0 内核驱动已安装并运行。
     /// </summary>
-    private static bool EnsureWinRing0DriverRunning()
+    private bool EnsureWinRing0DriverRunning()
     {
         const string serviceName = "WinRing0_1_2_0";
         const string displayName = "WinRing0 Low Level Access Driver";
 
         var nativeDir = FindNativeDirectory();
-        if (nativeDir == null) return false;
+        if (nativeDir == null)
+        {
+            _logger.LogError("WinRing0 驱动安装失败: native/ 目录不存在");
+            return false;
+        }
 
         var sysPath = Path.Combine(nativeDir, "WinRing0x64.sys");
-        if (!File.Exists(sysPath)) return false;
+        if (!File.Exists(sysPath))
+        {
+            _logger.LogError("WinRing0 驱动安装失败: WinRing0x64.sys 文件不存在 (路径: {SysPath})", sysPath);
+            return false;
+        }
 
+        _logger.LogInformation("打开 SCM 数据库");
         var scm = OpenSCManager(null, null, SC_MANAGER_ALL_ACCESS);
-        if (scm == IntPtr.Zero) return false;
+        if (scm == IntPtr.Zero)
+        {
+            var lastErr = Marshal.GetLastWin32Error();
+            _logger.LogError("OpenSCManager 失败 (lastErr={LastError})", lastErr);
+            return false;
+        }
 
         try
         {
@@ -376,6 +439,7 @@ public sealed class RyzenAdjWrapper : IDisposable
                 if (service == IntPtr.Zero)
                 {
                     var lastErr = Marshal.GetLastWin32Error();
+                    _logger.LogInformation("WinRing0 服务不存在 (lastErr={LastError})，尝试创建", lastErr);
                     if (lastErr == 1060)
                     {
                         service = CreateService(
@@ -383,20 +447,49 @@ public sealed class RyzenAdjWrapper : IDisposable
                             SERVICE_ALL_ACCESS, SERVICE_KERNEL_DRIVER,
                             SERVICE_DEMAND_START, SERVICE_ERROR_NORMAL,
                             sysPath, null, IntPtr.Zero, null, null, null);
+                        if (service != IntPtr.Zero)
+                            _logger.LogInformation("WinRing0 服务创建成功");
+                        else
+                        {
+                            var createErr = Marshal.GetLastWin32Error();
+                            _logger.LogError("CreateService 失败 (lastErr={LastError})", createErr);
+                        }
                     }
+                    else
+                    {
+                        _logger.LogWarning("OpenService 失败，非 ERROR_SERVICE_DOES_NOT_EXIST 错误 (lastErr={LastError})", lastErr);
+                    }
+                }
+                else
+                {
+                    _logger.LogInformation("WinRing0 服务已存在");
                 }
 
                 if (service == IntPtr.Zero) return false;
 
                 if (QueryServiceStatus(service, out var status))
                 {
+                    _logger.LogInformation("WinRing0 服务当前状态: dwCurrentState={State}", status.dwCurrentState);
                     if (status.dwCurrentState == SERVICE_RUNNING)
+                    {
+                        _logger.LogInformation("WinRing0 驱动已在运行");
                         return true;
+                    }
                     if (status.dwCurrentState == SERVICE_START_PENDING)
+                    {
+                        _logger.LogInformation("WinRing0 驱动正在启动，等待...");
                         return WaitForServiceStart(service, 5000);
+                    }
                 }
 
-                if (!StartService(service, 0, null)) return false;
+                _logger.LogInformation("启动 WinRing0 驱动服务");
+                if (!StartService(service, 0, null))
+                {
+                    var startErr = Marshal.GetLastWin32Error();
+                    _logger.LogError("StartService 失败 (lastErr={LastError})", startErr);
+                    return false;
+                }
+                _logger.LogInformation("StartService 成功，等待驱动就绪");
                 return WaitForServiceStart(service, 5000);
             }
             finally

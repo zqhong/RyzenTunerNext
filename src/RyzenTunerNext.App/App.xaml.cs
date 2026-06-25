@@ -87,7 +87,16 @@ public partial class App : Application
             Logs = new LogRepository(ConnectionString);
             ProfilerResults = new ProfilerResultRepository(ConnectionString);
             StatusCache = new StatusCacheRepository(ConnectionString);
-            RyzenAdj = new RyzenAdjWrapper();
+
+            // ILogger 日志通过 LogRepositoryLoggerProvider 写入 SQLite
+            // RyzenAdjWrapper 需要 logger 记录初始化诊断日志，因此日志工厂在 RyzenAdj 之前创建
+            var loggerFactory = Microsoft.Extensions.Logging.LoggerFactory.Create(builder =>
+            {
+                builder.AddProvider(new LogRepositoryLoggerProvider(Logs));
+                builder.SetMinimumLevel(LogLevel.Information);
+            });
+
+            RyzenAdj = new RyzenAdjWrapper(loggerFactory.CreateLogger<RyzenAdjWrapper>());
 
             await Logs.InfoAsync("App", "数据库初始化完成");
             DiagnosticFileLogger.Write("数据库初始化完成");
@@ -98,13 +107,7 @@ public partial class App : Application
             DiagnosticFileLogger.Write("反作弊警告检查完成");
 
             // 4. 构造 PowerManager（MainWindow 构造函数需要订阅其事件）
-            //    ILogger 日志通过 LogRepositoryLoggerProvider 写入 SQLite
             DiagnosticFileLogger.Write("步骤 4: 构造 PowerManager");
-            var loggerFactory = Microsoft.Extensions.Logging.LoggerFactory.Create(builder =>
-            {
-                builder.AddProvider(new LogRepositoryLoggerProvider(Logs));
-                builder.SetMinimumLevel(LogLevel.Information);
-            });
             PowerManager = new PowerManager(
                 RyzenAdj,
                 Settings,

@@ -211,23 +211,43 @@ public class PowerManager
     private async Task InitializeRyzenAdjAsync(CancellationToken ct)
     {
         const int maxRetries = 10;
+        var firstAttempt = DateTime.UtcNow;
+
         for (int i = 0; i < maxRetries; i++)
         {
+            var elapsed = DateTime.UtcNow - firstAttempt;
+            _logger.LogInformation("RyzenAdj 初始化尝试 ({Attempt}/{Max})，已耗时 {Elapsed}",
+                i + 1, maxRetries, elapsed);
+            await _logs.InfoAsync("Service",
+                $"RyzenAdj 初始化尝试 ({i + 1}/{maxRetries})，已耗时 {elapsed.TotalSeconds:F0} 秒");
+
             var (success, error) = _ryzenAdj.Initialize();
             if (success)
             {
-                _logger.LogInformation("RyzenAdj 初始化成功，CPU Family: {Family}", _ryzenAdj.GetCpuFamily());
-                await _logs.InfoAsync("Service", $"RyzenAdj 初始化成功，CPU Family: {_ryzenAdj.GetCpuFamily()}");
+                var cpuFamily = _ryzenAdj.GetCpuFamily();
+                _logger.LogInformation("RyzenAdj 初始化成功，总耗时 {Elapsed}，CPU Family: {Family}",
+                    elapsed, cpuFamily);
+                await _logs.InfoAsync("Service",
+                    $"RyzenAdj 初始化成功，总耗时 {elapsed.TotalSeconds:F0} 秒，CPU Family: {cpuFamily}");
                 return;
             }
 
-            _logger.LogError("RyzenAdj 初始化失败: {Error}，30 秒后重试 ({Attempt}/{Max})", error, i + 1, maxRetries);
-            await _logs.ErrorAsync("Service", $"RyzenAdj 初始化失败: {error}，30 秒后重试 ({i + 1}/{maxRetries})");
-            await Task.Delay(30000, ct);
+            _logger.LogError("RyzenAdj 初始化失败 ({Attempt}/{Max}，已耗时 {Elapsed}): {Error}",
+                i + 1, maxRetries, elapsed, error);
+            await _logs.ErrorAsync("Service",
+                $"RyzenAdj 初始化失败 ({i + 1}/{maxRetries}，已耗时 {elapsed.TotalSeconds:F0} 秒): {error}");
+
+            if (i < maxRetries - 1)
+            {
+                _logger.LogInformation("30 秒后重试...");
+                await Task.Delay(30000, ct);
+            }
         }
 
-        _logger.LogCritical("RyzenAdj 初始化失败，已达最大重试次数");
-        await _logs.ErrorAsync("Service", "RyzenAdj 初始化失败，已达最大重试次数。最后一次错误详情已写入日志");
+        var totalElapsed = DateTime.UtcNow - firstAttempt;
+        _logger.LogCritical("RyzenAdj 初始化失败，已达最大重试次数，总耗时 {TotalElapsed}", totalElapsed);
+        await _logs.ErrorAsync("Service",
+            $"RyzenAdj 初始化失败，已达最大重试次数，总耗时 {totalElapsed.TotalSeconds:F0} 秒");
     }
 
     #endregion
