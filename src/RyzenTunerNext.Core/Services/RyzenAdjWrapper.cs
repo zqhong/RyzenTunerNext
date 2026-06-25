@@ -19,19 +19,36 @@ public sealed class RyzenAdjWrapper : IDisposable
     /// <summary>
     /// 初始化 RyzenAdj 和 PM Table。
     /// 需要管理员/ SYSTEM 权限。
+    /// 返回 (是否成功, 错误信息)。
     /// </summary>
-    public bool Initialize()
+    public (bool Success, string? Error) Initialize()
     {
         lock (_lock)
         {
-            if (_disposed) return false;
+            if (_disposed) return (false, "RyzenAdjWrapper 已释放");
 
-            _handle = RyzenAdjNative.init_ryzenadj();
-            if (_handle == IntPtr.Zero) return false;
+            try
+            {
+                _handle = RyzenAdjNative.init_ryzenadj();
+                if (_handle == IntPtr.Zero)
+                    return (false, "init_ryzenadj 返回空句柄（可能原因：权限不足、DLL 缺失、或 CPU 不受支持）");
 
-            int tableResult = RyzenAdjNative.init_table(_handle);
-            _tableInitialized = tableResult == 0;
-            return true;
+                int tableResult = RyzenAdjNative.init_table(_handle);
+                _tableInitialized = tableResult == 0;
+                return (true, null);
+            }
+            catch (DllNotFoundException ex)
+            {
+                return (false, $"DLL 加载失败: {ex.Message}");
+            }
+            catch (EntryPointNotFoundException ex)
+            {
+                return (false, $"DLL 入口点未找到: {ex.Message}");
+            }
+            catch (Exception ex)
+            {
+                return (false, $"初始化异常: {ex}");
+            }
         }
     }
 

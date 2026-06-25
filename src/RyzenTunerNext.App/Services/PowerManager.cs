@@ -213,15 +213,16 @@ public class PowerManager
         const int maxRetries = 10;
         for (int i = 0; i < maxRetries; i++)
         {
-            if (_ryzenAdj.Initialize())
+            var (success, error) = _ryzenAdj.Initialize();
+            if (success)
             {
                 _logger.LogInformation("RyzenAdj 初始化成功，CPU Family: {Family}", _ryzenAdj.GetCpuFamily());
                 await _logs.InfoAsync("Service", $"RyzenAdj 初始化成功，CPU Family: {_ryzenAdj.GetCpuFamily()}");
                 return;
             }
 
-            _logger.LogError("RyzenAdj 初始化失败，30 秒后重试 ({Attempt}/{Max})", i + 1, maxRetries);
-            await _logs.ErrorAsync("Service", $"RyzenAdj 初始化失败，30 秒后重试 ({i + 1}/{maxRetries})");
+            _logger.LogError("RyzenAdj 初始化失败: {Error}，30 秒后重试 ({Attempt}/{Max})", error, i + 1, maxRetries);
+            await _logs.ErrorAsync("Service", $"RyzenAdj 初始化失败: {error}，30 秒后重试 ({i + 1}/{maxRetries})");
             await Task.Delay(30000, ct);
         }
 
