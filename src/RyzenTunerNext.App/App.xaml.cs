@@ -31,6 +31,10 @@ public partial class App : Application
 
     public App()
     {
+        // 尽早初始化原生库搜索路径（native/ 子目录）
+        // 必须在任何 P/Invoke 调用之前
+        NativeLibraryLoader.Initialize();
+
         InitializeComponent();
     }
 

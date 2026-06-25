@@ -137,12 +137,20 @@ jobs:
           $summary | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
         shell: pwsh
 
+      # 压缩构建产物
+      - name: Package Artifact
+        run: |
+          Compress-Archive -Path "publish\app\*" -DestinationPath "RyzenTunerNext.zip" -Force
+          $sizeMB = [math]::Round((Get-Item "RyzenTunerNext.zip").Length / 1MB, 2)
+          Write-Host "RyzenTunerNext.zip - ${sizeMB} MB"
+        shell: pwsh
+
       # 上传产物
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: RyzenTunerNext
-          path: publish/app/
+          path: RyzenTunerNext.zip
           retention-days: 30
 
       # 失败时输出详细日志

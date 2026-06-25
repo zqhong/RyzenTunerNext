@@ -32,10 +32,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- RyzenAdj 运行时依赖 -->
-    <Content Include="..\..\lib\libryzenadj.dll" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="..\..\lib\WinRing0x64.dll" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="..\..\lib\WinRing0x64.sys" CopyToOutputDirectory="PreserveNewest" />
+    <!-- RyzenAdj 运行时依赖 → native/ 子目录 -->
+    <Content Include="..\..\lib\libryzenadj.dll" Link="native\libryzenadj.dll" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\lib\WinRing0x64.dll" Link="native\WinRing0x64.dll" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\lib\WinRing0x64.sys" Link="native\WinRing0x64.sys" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
