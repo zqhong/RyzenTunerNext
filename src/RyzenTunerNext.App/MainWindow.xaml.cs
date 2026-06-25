@@ -6,6 +6,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
 using RyzenTunerNext.App.Helpers;
+using RyzenTunerNext.App.Services;
 using RyzenTunerNext.App.Views;
 using RyzenTunerNext.Core.Messaging;
 
